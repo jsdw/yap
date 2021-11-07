@@ -18,13 +18,13 @@ pub struct SliceTokens<'a, Item> {
 pub struct SliceTokensCheckpoint(usize);
 
 impl <'a, Item> SliceTokens<'a, Item> {
-    /// Return the entire slice.
-    pub fn slice(&self) -> &'a [Item] {
-        self.slice
+    /// Return the parsed portion of the slice.
+    pub fn consumed(&self) -> &'a [Item] {
+        &self.slice[..self.cursor]
     }
 
     /// Return the unparsed remainder of the slice.
-    pub fn slice_remaining(&self) -> &'a [Item] {
+    pub fn remaining(&self) -> &'a [Item] {
         &self.slice[self.cursor..]
     }
 }
@@ -44,12 +44,9 @@ impl <'a, Item> Iterator for SliceTokens<'a, Item> {
     }
 }
 
-impl <'a, Item> Tokens<&'a Item> for SliceTokens<'a, Item> {
+impl <'a, Item> Tokens for SliceTokens<'a, Item> {
     type CheckPoint = SliceTokensCheckpoint;
 
-    fn offset(&self) -> usize {
-        self.cursor
-    }
     fn save_checkpoint(&self) -> Self::CheckPoint {
         SliceTokensCheckpoint(self.cursor)
     }
@@ -85,14 +82,13 @@ pub struct StrTokens<'a> {
 pub struct StrTokensCheckpoint(usize);
 
 impl <'a> StrTokens<'a> {
-    /// Return the entire string.
-    pub fn str(&self) -> &'a str {
-        self.str
+    /// Return the parsed portion of the str.
+    pub fn consumed(&self) -> &'a str {
+        &self.str[..self.cursor]
     }
 
-    /// Return the unparsed remainder of the string.
-    pub fn str_remaining(&self) -> &'a str {
-        // trust the cursor to be on a char boundary.
+    /// Return the unparsed remainder of the str.
+    pub fn remaining(&self) -> &'a str {
         &self.str[self.cursor..]
     }
 }
@@ -129,12 +125,9 @@ impl <'a> Iterator for StrTokens<'a> {
     }
 }
 
-impl <'a> Tokens<char> for StrTokens<'a> {
+impl <'a> Tokens for StrTokens<'a> {
     type CheckPoint = StrTokensCheckpoint;
 
-    fn offset(&self) -> usize {
-        self.cursor
-    }
     fn save_checkpoint(&self) -> Self::CheckPoint {
         StrTokensCheckpoint(self.cursor)
     }

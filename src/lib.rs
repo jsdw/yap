@@ -1,4 +1,5 @@
 mod tokens;
+mod utils;
 
 pub mod types;
 pub use tokens::{ Tokens, IntoTokens };
@@ -13,7 +14,7 @@ tokens you'd like to pass, so instead of writing:
 ```rust
 use yap::{ Tokens, IntoTokens };
 
-fn parser(mut t: impl Tokens<char>) -> Option<bool> {
+fn parser(mut t: impl Tokens<Item=char>) -> Option<bool> {
     let a = t.next()?;
     let b = t.next()?;
     Some(a == 'a' && b == 'b')
@@ -30,7 +31,7 @@ We can write:
 ```rust
 use yap::Tokens;
 
-fn parser(mut t: impl Tokens<char>) -> Option<bool> {
+fn parser(mut t: impl Tokens<Item=char>) -> Option<bool> {
     let a = t.next()?;
     let b = t.next()?;
     Some(a == 'a' && b == 'b')
