@@ -60,11 +60,11 @@ macro_rules! one_of {
     ($tokens:ident; $( $e:expr ),+ $(,)?) => {
         loop {
             $(
-                let checkpoint = $tokens.save_checkpoint();
+                let checkpoint = $tokens.location();
                 if let Some(res) = $e {
                     break Some(res);
                 }
-                $tokens.rewind_to_checkpoint(checkpoint);
+                $tokens.rewind_to_location(checkpoint);
             )+
             break None;
         };
@@ -73,11 +73,11 @@ macro_rules! one_of {
         loop {
             let mut $alias = &mut $tokens;
             $(
-                let checkpoint = $alias.save_checkpoint();
+                let checkpoint = $alias.location();
                 if let Some(res) = $e {
                     break Some(res);
                 }
-                $alias.rewind_to_checkpoint(checkpoint);
+                $alias.rewind_to_location(checkpoint);
             )+
             break None;
         };

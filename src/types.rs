@@ -6,7 +6,7 @@ the types in quesiton.
 Prefer to remain generic where possible, for example by using 
 `t: impl Tokens<char>` over `t: StrTokens<'a>` as an argument.
 */
-use super::{ IntoTokens, Tokens };
+use super::{ IntoTokens, Tokens, TokenLocation };
 
 /// This is what we are given back if we call `into_tokens()` on
 /// a `&[T]`. It implements the [`Tokens`] interface.
@@ -15,7 +15,14 @@ pub struct SliceTokens<'a, Item> {
     cursor: usize,
 }
 
-pub struct SliceTokensCheckpoint(usize);
+#[derive(Clone,Copy,Eq,PartialEq,Hash,Ord,PartialOrd,Debug)]
+pub struct SliceTokensLocation(usize);
+
+impl TokenLocation for SliceTokensLocation {
+    fn offset(&self) -> usize {
+        self.0
+    }
+}
 
 impl <'a, Item> SliceTokens<'a, Item> {
     /// Return the parsed portion of the slice.
@@ -45,13 +52,16 @@ impl <'a, Item> Iterator for SliceTokens<'a, Item> {
 }
 
 impl <'a, Item> Tokens for SliceTokens<'a, Item> {
-    type CheckPoint = SliceTokensCheckpoint;
+    type Location = SliceTokensLocation;
 
-    fn save_checkpoint(&self) -> Self::CheckPoint {
-        SliceTokensCheckpoint(self.cursor)
+    fn location(&self) -> Self::Location {
+        SliceTokensLocation(self.cursor)
     }
-    fn rewind_to_checkpoint(&mut self, checkpoint: Self::CheckPoint) {
-        self.cursor = checkpoint.0;
+    fn rewind_to_location(&mut self, location: Self::Location) {
+        self.cursor = location.0;
+    }
+    fn is_at_location(&self, location: Self::Location) -> bool {
+        self.cursor == location.0
     }
 }
 
@@ -79,7 +89,14 @@ pub struct StrTokens<'a> {
     cursor: usize
 }
 
-pub struct StrTokensCheckpoint(usize);
+#[derive(Clone,Copy,Eq,PartialEq,Hash,Ord,PartialOrd,Debug)]
+pub struct StrTokensLocation(usize);
+
+impl TokenLocation for StrTokensLocation {
+    fn offset(&self) -> usize {
+        self.0
+    }
+}
 
 impl <'a> StrTokens<'a> {
     /// Return the parsed portion of the str.
@@ -126,13 +143,16 @@ impl <'a> Iterator for StrTokens<'a> {
 }
 
 impl <'a> Tokens for StrTokens<'a> {
-    type CheckPoint = StrTokensCheckpoint;
+    type Location = StrTokensLocation;
 
-    fn save_checkpoint(&self) -> Self::CheckPoint {
-        StrTokensCheckpoint(self.cursor)
+    fn location(&self) -> Self::Location {
+        StrTokensLocation(self.cursor)
     }
-    fn rewind_to_checkpoint(&mut self, checkpoint: Self::CheckPoint) {
-        self.cursor = checkpoint.0;
+    fn rewind_to_location(&mut self, location: Self::Location) {
+        self.cursor = location.0;
+    }
+    fn is_at_location(&self, location: Self::Location) -> bool {
+        self.cursor == location.0
     }
 }
 

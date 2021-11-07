@@ -2,7 +2,7 @@ mod tokens;
 mod utils;
 
 pub mod types;
-pub use tokens::{ Tokens, IntoTokens };
+pub use tokens::{ Tokens, IntoTokens, TokenLocation };
 
 /**
 Given some tokens (a `&str` or a slice of items) and a parser function, return

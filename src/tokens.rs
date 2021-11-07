@@ -11,9 +11,9 @@ pub trait Tokens: Iterator {
 
     /// An object which can be used to reset the token stream 
     /// to some position.
-    type CheckPoint;
+    type Location: TokenLocation + PartialEq;
 
-    /// Return a "checkpoint" that you can later pass to [`Tokens::rewind_to_checkpoint`]
+    /// Return a "location" that you can later pass to [`Tokens::rewind_to_location`]
     /// to reset the tokens back to the state at the time it was handed out.
     ///
     /// # Example
@@ -23,27 +23,45 @@ pub trait Tokens: Iterator {
     ///
     /// let mut s = "abcde".into_tokens();
     ///
-    /// let checkpoint = s.save_checkpoint();
+    /// let location = s.location();
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
     /// assert_eq!(s.consumed().len(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
     /// assert_eq!(s.consumed().len(), 2);
     ///
-    /// s.rewind_to_checkpoint(checkpoint);
+    /// s.rewind_to_location(location);
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
     /// assert_eq!(s.consumed().len(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
     /// assert_eq!(s.consumed().len(), 2);
     /// ```
-    fn save_checkpoint(&self) -> Self::CheckPoint;
+    fn location(&self) -> Self::Location;
 
-    /// Reset the tokens to the checkpoint provided. If you provide a checkpoint that
+    /// Reset the tokens to the location provided. If you provide a location that
     /// is in the future, expect that this could panic (implementation dependent).
     ///
-    /// See [`Tokens::save_checkpoint`].
-    fn rewind_to_checkpoint(&mut self, checkpoint: Self::CheckPoint);
+    /// See [`Tokens::location`].
+    fn rewind_to_location(&mut self, location: Self::Location);
+
+    /// Return true if the current cursor location matches the location given, or false
+    /// otherwise.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    /// 
+    /// let mut s = "abc".into_tokens();
+    /// let location = s.location();
+    /// assert_eq!(s.is_at_location(location), true);
+    /// s.next();
+    /// assert_eq!(s.is_at_location(location), false);
+    /// s.rewind_to_location(location);
+    /// assert_eq!(s.is_at_location(location), true);
+    /// ```
+    fn is_at_location(&self, location: Self::Location) -> bool;
 
     /// Get back the next item in the input without consuming it.
     /// 
@@ -57,9 +75,9 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.peek(), Some('a'));
     /// ```
     fn peek(&mut self) -> Option<Self::Item> {
-        let checkpoint = self.save_checkpoint();
+        let location = self.location();
         let item = self.next();
-        self.rewind_to_checkpoint(checkpoint);
+        self.rewind_to_location(location);
         item
     }
 
@@ -83,9 +101,13 @@ pub trait Tokens: Iterator {
         Self::Item: PartialEq,
         I: Borrow<Self::Item>
     {
-        match self.peek() {
-            Some(item) if &item == t.borrow() => { self.next(); true },
-            _ => false
+        let location = self.location();
+        match self.next() {
+            Some(item) if &item == t.borrow() => true,
+            _ => {
+                self.rewind_to_location(location);
+                false
+            }
         }
     }
 
@@ -112,12 +134,12 @@ pub trait Tokens: Iterator {
         It: IntoIterator,
         It::Item: Borrow<Self::Item>
     {
-        let checkpoint = self.save_checkpoint();
+        let location = self.location();
         // `ts` comes first to avoid consuming an extra item from self before 
         // realising that it's time to stop..
         for (expected, actual) in ts.into_iter().zip(self.into_iter()) {
             if &actual != expected.borrow() {
-                self.rewind_to_checkpoint(checkpoint);
+                self.rewind_to_location(location);
                 return false;
             }
         }
@@ -147,13 +169,13 @@ pub trait Tokens: Iterator {
         It::Item: Borrow<Self::Item>
     {
         for expected in ts.into_iter() {
-            let checkpoint = self.save_checkpoint();
+            let location = self.location();
             match self.next() {
                 Some(token) if &token == expected.borrow() => {
                     return Some(token)
                 },
                 _ => {
-                    self.rewind_to_checkpoint(checkpoint);
+                    self.rewind_to_location(location);
                 }
             }
         }
@@ -184,13 +206,13 @@ pub trait Tokens: Iterator {
     {
         let mut out = vec![];
         loop {
-            let pos = self.save_checkpoint();
+            let pos = self.location();
             if let Some(output) = parser(self) {
                 out.push(output);
             } else {
                 // The provided parser failed to produce more output,
                 // so rewind to before it and end.
-                self.rewind_to_checkpoint(pos);
+                self.rewind_to_location(pos);
                 break out;
             }
         }
@@ -230,13 +252,13 @@ pub trait Tokens: Iterator {
     {
         let mut out = vec![];
         loop {
-            let pos = self.save_checkpoint();
+            let pos = self.location();
             match parser(self) {
                 Ok(output) => {
                     out.push(output);
                 },
                 Err(e) => {
-                    self.rewind_to_checkpoint(pos);
+                    self.rewind_to_location(pos);
                     if out.is_empty() {
                         break Err(e)
                     } else {                    
@@ -275,11 +297,11 @@ pub trait Tokens: Iterator {
     where F: FnMut(&mut Self) -> bool
     {
         loop {
-            let pos = self.save_checkpoint();
+            let pos = self.location();
             if !parser(self) {
                 // The provided parser failed to produce more output,
                 // so rewind to before it and end.
-                self.rewind_to_checkpoint(pos);
+                self.rewind_to_location(pos);
                 break;
             }
         }
@@ -316,9 +338,9 @@ pub trait Tokens: Iterator {
     {
         let mut has_seen = false;
         loop {
-            let pos = self.save_checkpoint();
+            let pos = self.location();
             if let Err(e) = parser(self) {
-                self.rewind_to_checkpoint(pos);
+                self.rewind_to_location(pos);
                 if !has_seen {
                     break Err(e)
                 } else {                    
@@ -351,12 +373,11 @@ pub trait Tokens: Iterator {
     {
         let mut toks = vec![];
         loop {
-            let pos = self.save_checkpoint();
-            if let Some(item) = self.next() {
-                if f(&item) {
-                    toks.push(item);
-                } else {
-                    self.rewind_to_checkpoint(pos);
+            let pos = self.location();
+            match self.next() {
+                Some(item) if f(&item) => toks.push(item),
+                _ => {
+                    self.rewind_to_location(pos);
                     break toks;
                 }
             }
@@ -398,12 +419,11 @@ pub trait Tokens: Iterator {
     where F: FnMut(&Self::Item) -> bool
     {
         loop {
-            let pos = self.save_checkpoint();
-            if let Some(item) = self.next() {
-                if f(&item) {
-                    // item found; keep going
-                } else {
-                    self.rewind_to_checkpoint(pos);
+            let pos = self.location();
+            match self.next() {
+                Some(item) if f(&item) => { /* item found; keep going */ }
+                _ => {
+                    self.rewind_to_location(pos);
                     break;
                 }
             }
@@ -452,24 +472,24 @@ pub trait Tokens: Iterator {
         S: FnMut(&mut Self) -> bool
     {
         let mut out = vec![];
-        let mut last_out_pos = self.save_checkpoint();
+        let mut last_out_pos = self.location();
         loop {
             match parser(self) {
                 Some(output) => {
                     out.push(output);
-                    last_out_pos = self.save_checkpoint();
+                    last_out_pos = self.location();
         
                     if !separator(self) {
                         // No separator? rewind to after the last output and return
                         // what we have so far.
-                        self.rewind_to_checkpoint(last_out_pos);
+                        self.rewind_to_location(last_out_pos);
                         break out;
                     }
                 }
                 None => {
                     // No output? We may have parsed a separator last time round!
                     // Revert to after last output and return what we have.
-                    self.rewind_to_checkpoint(last_out_pos);
+                    self.rewind_to_location(last_out_pos);
                     break out;
                 }
             }
@@ -501,24 +521,24 @@ pub trait Tokens: Iterator {
         S: FnMut(&mut Self) -> bool
     {
         let mut out = vec![];
-        let mut last_out_pos = self.save_checkpoint();
+        let mut last_out_pos = self.location();
         loop {
             match parser(self) {
                 Ok(output) => {
                     out.push(output);
-                    last_out_pos = self.save_checkpoint();
+                    last_out_pos = self.location();
             
                     if !separator(self) {
                         // No separator? rewind to after the last output and return
                         // what we have so far.
-                        self.rewind_to_checkpoint(last_out_pos);
+                        self.rewind_to_location(last_out_pos);
                         break Ok(out);
                     }
                 },
                 Err(e) => {
                     // Reset to last output parsed. Return error if no output 
                     // was successfully parsed at all.
-                    self.rewind_to_checkpoint(last_out_pos);
+                    self.rewind_to_location(last_out_pos);
                     break if out.is_empty() { Err(e) } else { Ok(out) };
                 }
             }
@@ -574,12 +594,12 @@ pub trait Tokens: Iterator {
         S: FnMut(&mut Self) -> Option<Output>
     {
         let mut out = vec![];
-        let mut last_out_pos = self.save_checkpoint();
+        let mut last_out_pos = self.location();
         loop {
             match parser(self) {
                 Some(output) => {
                     out.push(output);
-                    last_out_pos = self.save_checkpoint();
+                    last_out_pos = self.location();
         
                     match separator(self) {
                         Some(sep) => {
@@ -589,7 +609,7 @@ pub trait Tokens: Iterator {
                         None => {
                             // No separator? rewind to after the last output and return
                             // what we have so far.
-                            self.rewind_to_checkpoint(last_out_pos);
+                            self.rewind_to_location(last_out_pos);
                             break out;
                         }
                     }
@@ -598,7 +618,7 @@ pub trait Tokens: Iterator {
                     // No output? We're either just starting, or we just parsed a separator,
                     // so rewind and throw away the mis-parsed separator (if there is one).
                     out.pop();
-                    self.rewind_to_checkpoint(last_out_pos);
+                    self.rewind_to_location(last_out_pos);
                     break out;
                 }
             }
@@ -613,12 +633,12 @@ pub trait Tokens: Iterator {
         S: FnMut(&mut Self) -> Option<Output>
     {
         let mut out = vec![];
-        let mut last_out_pos = self.save_checkpoint();
+        let mut last_out_pos = self.location();
         loop {
             match parser(self) {
                 Ok(output) => {
                     out.push(output);
-                    last_out_pos = self.save_checkpoint();
+                    last_out_pos = self.location();
             
                     match separator(self) {
                         Some(sep) => {
@@ -628,7 +648,7 @@ pub trait Tokens: Iterator {
                         None => {
                             // No separator? rewind to after the last output and return
                             // what we have so far.
-                            self.rewind_to_checkpoint(last_out_pos);
+                            self.rewind_to_location(last_out_pos);
                             break Ok(out);
                         }
                     }
@@ -636,11 +656,39 @@ pub trait Tokens: Iterator {
                 Err(e) => {
                     // Reset to last output parsed. Return error if no output 
                     // was successfully parsed at all.
-                    self.rewind_to_checkpoint(last_out_pos);
+                    self.rewind_to_location(last_out_pos);
                     break if out.is_empty() { Err(e) } else { Ok(out) };
                 }
             }
         }
+    }
+
+    /// Parse some tokens optionally surrounded by the tokens consumed by the surrounding parser.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "   hello    ".into_tokens();
+    ///
+    /// let hello: String = s.surrounded_by(
+    ///     |t| t.take_tokens_while(|c| c.is_ascii_alphabetic()).into_iter().collect(),
+    ///     |t| t.skip_tokens_while(|c| c.is_ascii_whitespace())
+    /// );
+    ///
+    /// assert_eq!(&*hello, "hello");
+    /// assert_eq!(s.remaining(), "");
+    /// ```
+    fn surrounded_by<F, S, Output>(&mut self, mut parser: F, mut surrounding: S) -> Output 
+    where
+        F: FnMut(&mut Self) -> Output,
+        S: FnMut(&mut Self)
+    {
+        self.skip_optional(&mut surrounding);
+        let res = parser(self);
+        self.skip_optional(&mut surrounding);
+        res
     }
 
     /// Attempt to parse some output from the tokens. If the function returns `None`,
@@ -653,7 +701,7 @@ pub trait Tokens: Iterator {
     ///
     /// let mut s = "foobar".into_tokens();
     ///
-    /// let res = s.try_tokens(|s| {
+    /// let res = s.optional(|s| {
     ///     let a = s.next();
     ///     let b = s.next();
     ///     if a == b {
@@ -667,7 +715,7 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.remaining(), "foobar");
     /// assert_eq!(res, None);
     ///
-    /// let res = s.try_tokens(|s| {
+    /// let res = s.optional(|s| {
     ///     let a = s.next()?;
     ///     let b = s.next()?;
     ///     Some((a, b))
@@ -677,30 +725,84 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Some(('f', 'o')));
     /// ```
-    fn try_tokens<F, Output>(&mut self, mut f: F) -> Option<Output> 
+    fn optional<F, Output>(&mut self, mut f: F) -> Option<Output> 
     where F: FnMut(&mut Self) -> Option<Output> {
-        let checkpoint = self.save_checkpoint();
+        let location = self.location();
         match f(self) {
             Some(output) => Some(output),
             None => {
-                self.rewind_to_checkpoint(checkpoint);
+                self.rewind_to_location(location);
                 None
             }
         }
     }
 
+    /// Run a parser against some tokens, and don't care whether it succeeded
+    /// or how much input it consumed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "   helloworld".into_tokens();
+    ///
+    /// fn parse_whitespace(mut t: impl Tokens<Item=char>) {
+    ///     t.skip_tokens_while(|c| c.is_ascii_whitespace());
+    /// }
+    ///
+    /// s.skip_optional(|t| parse_whitespace(t));
+    /// let is_hello = s.tokens("hello".chars());
+    /// s.skip_optional(|t| parse_whitespace(t));
+    /// let world: String = s.take_tokens_while(|c| c.is_ascii_alphabetic()).into_iter().collect();
+    ///
+    /// // assert_eq!(is_hello, true);
+    /// // assert_eq!(&*world, "world");
+    /// ```
+    fn skip_optional<F>(&mut self, mut f: F)
+    where F: FnMut(&mut Self) {
+        self.optional(|t| {
+            f(t);
+            Some(())
+        });
+    }
+
+}
+
+pub trait TokenLocation {
+    /// Return the current offset into the tokens that we've parsed up to so far.
+    /// The exact meaning of this can vary by implementation; when parsing slices, it
+    /// is index of the slice item we've consumed up to (it may equal `slice.len()`), and when
+    /// parsing `&str`'s it is the number of bytes (not characters) consumed so far.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// use yap::{ Tokens, IntoTokens, TokenLocation };
+    /// 
+    /// let mut s = "abc".into_tokens();
+    /// assert_eq!(s.location().offset(), 0);
+    /// s.next();
+    /// assert_eq!(s.location().offset(), 1);
+    /// s.next();
+    /// assert_eq!(s.location().offset(), 2);
+    /// ```
+    fn offset(&self) -> usize;
 }
 
 impl <'a, T> Tokens for &'a mut T 
 where T: Tokens
 {
-    type CheckPoint = T::CheckPoint;
+    type Location = T::Location;
 
-    fn save_checkpoint(&self) -> Self::CheckPoint {
-        <T as Tokens>::save_checkpoint(self)
+    fn location(&self) -> Self::Location {
+        <T as Tokens>::location(self)
     }
-    fn rewind_to_checkpoint(&mut self, checkpoint: Self::CheckPoint) {
-        <T as Tokens>::rewind_to_checkpoint(self, checkpoint)
+    fn rewind_to_location(&mut self, location: Self::Location) {
+        <T as Tokens>::rewind_to_location(self, location)
+    }
+    fn is_at_location(&self, location: Self::Location) -> bool {
+        <T as Tokens>::is_at_location(self, location)
     }
 }
 
