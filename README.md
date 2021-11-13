@@ -1,5 +1,7 @@
 # Yap: Yet another (rust) parsing library
 
+[![API docs](https://docs.rs/yap/badge.svg)](https://docs.rs/yap)
+
 This crate helps you to parse input strings and slices by building on the `Iterator` interface.
 
 The aim of this crate is to provide transparent, flexible and easy to understand parsing utilities 

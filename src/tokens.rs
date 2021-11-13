@@ -22,6 +22,8 @@ pub use sep_by_err::SepByErr;
 pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
 
+/// The tokens trait builds on the [`Iterator`] trait, and adds a bunch of useful methods
+/// for parsing tokens from the underlying iterable type.
 pub trait Tokens: Iterator {
 
     /// An object which can be used to reset the token stream 
