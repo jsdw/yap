@@ -1,11 +1,26 @@
-/*! 
-This module contains the core [`Tokens`] trait, which adds various convenience methods
-to the standard [`Iterator`] interface aimed at making it easy to parse the input.
+//! This module contains the core [`Tokens`] trait, which adds various convenience methods
+//! to the standard [`Iterator`] interface aimed at making it easy to parse the input.
+//!
+//! The [`IntoTokens`] trait is implemented for types that can be converted into something
+//! implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
+mod many;
+mod many_err;
+mod tokens_while;
+mod sep_by;
+mod sep_by_err;
+mod sep_by_all;
+mod sep_by_all_err;
 
-The [`IntoTokens`] trait is implemented for types that can be converted into something
-implementing the [`Tokens`] trait (for example `&str` and `&[T]`). 
-*/
 use std::borrow::Borrow;
+
+// Re-export the structs handed back from  token fns:
+pub use tokens_while::TokensWhile;
+pub use many::Many;
+pub use many_err::ManyErr;
+pub use sep_by::SepBy;
+pub use sep_by_err::SepByErr;
+pub use sep_by_all::SepByAll;
+pub use sep_by_all_err::SepByAllErr;
 
 pub trait Tokens: Iterator {
 
@@ -13,8 +28,10 @@ pub trait Tokens: Iterator {
     /// to some position.
     type Location: TokenLocation + PartialEq;
 
-    /// Return a "location" that you can later pass to [`Tokens::rewind_to_location`]
-    /// to reset the tokens back to the state at the time it was handed out.
+    /// Return a "location" pointer. This can be passed to [`Tokens::set_location`]
+    /// to set the tokens location back to the state at the time it was handed out.
+    /// If the [`crate::TokenLocation`] trait is in scope, you can also call the
+    /// [`crate::TokenLocation::offset()`] method on it to obtain the current offset.
     ///
     /// # Example
     ///
@@ -26,24 +43,21 @@ pub trait Tokens: Iterator {
     /// let location = s.location();
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
-    /// assert_eq!(s.consumed().len(), 1);
+    /// assert_eq!(s.offset(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
-    /// assert_eq!(s.consumed().len(), 2);
+    /// assert_eq!(s.offset(), 2);
     ///
-    /// s.rewind_to_location(location);
+    /// s.set_location(location);
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
-    /// assert_eq!(s.consumed().len(), 1);
+    /// assert_eq!(s.offset(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
-    /// assert_eq!(s.consumed().len(), 2);
+    /// assert_eq!(s.offset(), 2);
     /// ```
     fn location(&self) -> Self::Location;
 
-    /// Reset the tokens to the location provided. If you provide a location that
-    /// is in the future, expect that this could panic (implementation dependent).
-    ///
-    /// See [`Tokens::location`].
-    fn rewind_to_location(&mut self, location: Self::Location);
+    /// Set the tokens to the location provided. See [`Tokens::location`].
+    fn set_location(&mut self, location: Self::Location);
 
     /// Return true if the current cursor location matches the location given, or false
     /// otherwise.
@@ -58,10 +72,31 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.is_at_location(location), true);
     /// s.next();
     /// assert_eq!(s.is_at_location(location), false);
-    /// s.rewind_to_location(location);
+    /// s.set_location(location);
     /// assert_eq!(s.is_at_location(location), true);
     /// ```
     fn is_at_location(&self, location: Self::Location) -> bool;
+
+    /// Return the current offset into the tokens that we've parsed up to so far.
+    /// The exact meaning of this can vary by implementation; when parsing slices, it
+    /// is index of the slice item we've consumed up to, and when
+    /// parsing `&str`'s it is the number of bytes (not characters) consumed so far.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// use yap::{ Tokens, IntoTokens, TokenLocation };
+    /// 
+    /// let mut s = "abc".into_tokens();
+    /// assert_eq!(s.offset(), 0);
+    /// s.next();
+    /// assert_eq!(s.offset(), 1);
+    /// s.next();
+    /// assert_eq!(s.offset(), 2);
+    /// ```
+    fn offset(&self) -> usize {
+        self.location().offset()
+    }
 
     /// Get back the next item in the input without consuming it.
     /// 
@@ -77,7 +112,7 @@ pub trait Tokens: Iterator {
     fn peek(&mut self) -> Option<Self::Item> {
         let location = self.location();
         let item = self.next();
-        self.rewind_to_location(location);
+        self.set_location(location);
         item
     }
 
@@ -105,7 +140,7 @@ pub trait Tokens: Iterator {
         match self.next() {
             Some(item) if &item == t.borrow() => true,
             _ => {
-                self.rewind_to_location(location);
+                self.set_location(location);
                 false
             }
         }
@@ -139,7 +174,7 @@ pub trait Tokens: Iterator {
         // realising that it's time to stop..
         for (expected, actual) in ts.into_iter().zip(self.into_iter()) {
             if &actual != expected.borrow() {
-                self.rewind_to_location(location);
+                self.set_location(location);
                 return false;
             }
         }
@@ -175,98 +210,138 @@ pub trait Tokens: Iterator {
                     return Some(token)
                 },
                 _ => {
-                    self.rewind_to_location(location);
+                    self.set_location(location);
                 }
             }
         }
         None
     }
 
-    /// Parse 0 or more instances of some parser, returning all of the successfully parsed
-    /// output and leaving any input that was not successfully parsed.
+    /// Return an iterator that will consume tokens until the provided function returns false.
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```
     /// use yap::{ Tokens, IntoTokens };
     ///
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
-    ///     let c = tokens.next()?;
-    ///     c.to_digit(10)
-    /// }
-    ///
-    /// let mut s = "12345abcde".into_tokens();
-    /// let digits = s.many(|t| parse_digit(t));
-    ///
-    /// assert_eq!(digits, vec![1,2,3,4,5]);
-    /// assert_eq!(s.remaining(), "abcde");
+    /// let mut s = "12345abc".into_tokens();
+    /// let digits: String = s.tokens_while(|c| c.is_numeric()).collect();
+    /// assert_eq!(&*digits, "12345");
+    /// assert_eq!(s.remaining(), "abc");
     /// ```
-    fn many<F, Output>(&mut self, mut parser: F) -> Vec<Output> 
-    where F: FnMut(&mut Self) -> Option<Output>
+    fn tokens_while<'a, F>(&'a mut self, f: F) -> TokensWhile<'a, Self, F>
+    where
+        Self: Sized, 
+        F: FnMut(&Self::Item) -> bool
     {
-        let mut out = vec![];
-        loop {
-            let pos = self.location();
-            if let Some(output) = parser(self) {
-                out.push(output);
-            } else {
-                // The provided parser failed to produce more output,
-                // so rewind to before it and end.
-                self.rewind_to_location(pos);
-                break out;
-            }
-        }
+        TokensWhile::new(self, f)
     }
 
-    /// Parse 1 or more instances of some parser, returning all of the successfully parsed
-    /// output and leaving any input that was not successfully parsed. If the provided parser
-    /// fails immediately, return the error that it produced.
-    ///
+    /// Iterate over the tokens until the provided function returns false on one.
+    /// Only consume the tokens that the function returned true for, ignoring them.
+    /// 
     /// # Example
     ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "12345abc".into_tokens();
+    /// s.skip_tokens_while(|c| c.is_numeric());
+    /// assert_eq!(s.remaining(), "abc");
+    /// ```
+    fn skip_tokens_while<F>(&mut self, f: F)
+    where
+        Self: Sized, 
+        F: FnMut(&Self::Item) -> bool
+    {
+        self.tokens_while(f).last();
+    }
+
+    /// Iterate over the tokens until the provided function returns true on one.
+    /// Only consume the tokens that the function returned false for, ignoring them.
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "abc12345".into_tokens();
+    /// s.skip_tokens_until(|c| c.is_numeric());
+    /// assert_eq!(s.remaining(), "12345");
+    /// ```
+    fn skip_tokens_until<F>(&mut self, mut f: F)
+    where
+        Self: Sized, 
+        F: FnMut(&Self::Item) -> bool
+    {
+        self.skip_tokens_while(|t| !f(t))
+    }
+
+    /// Returns an iterator that, on each iteration, attempts to run the provided parser
+    /// on the remaining tokens. If the parser returns [`None`], no tokens will be consumed.
+    ///
+    /// # Example
+    /// 
     /// ```rust
     /// use yap::{ Tokens, IntoTokens };
     ///
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
-    ///     let c = tokens.next()?;
-    ///     c.to_digit(10)
+    /// fn parse_digit_pair(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
+    ///     let d1 = tokens.next()?;
+    ///     let d2 = tokens.next()?;
+    ///     // Return the result of adding the 2 digits we saw:
+    ///     Some(d1.to_digit(10)? + d2.to_digit(10)?)
     /// }
     ///
-    /// // Parse all of the digits that we can. Note that `many1` expects
-    /// // a Result to be returned from out parser now, in case we want to
-    /// // return the error we encountered.
     /// let mut s = "12345abcde".into_tokens();
-    /// let digits = s.many1(|t| parse_digit(t).ok_or("aaah"));
-    /// assert_eq!(digits, Ok(vec![1,2,3,4,5]));
-    /// assert_eq!(s.remaining(), "abcde");
+    /// let digits: Vec<u32> = s.many(|t| parse_digit_pair(t)).collect();
     ///
-    /// // No digits at all; this won't work! `many` would just return an
-    /// // empty Vec, but `many1` gives us back the error we encountered.
-    /// let mut s = "abcde".into_tokens();
-    /// let digits = s.many1(|t| parse_digit(t).ok_or("aaah"));
-    /// assert_eq!(digits, Err("aaah"));
-    /// assert_eq!(s.remaining(), "abcde");
+    /// assert_eq!(digits, vec![3, 7]);
+    /// assert_eq!(s.remaining(), "5abcde");
     /// ```
-    fn many1<F, E, Output>(&mut self, mut parser: F) -> Result<Vec<Output>, E> 
-    where F: FnMut(&mut Self) -> Result<Output, E>
+    fn many<'a, F, Output>(&'a mut self, parser: F) -> Many<'a, Self, F>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self) -> Option<Output>
     {
-        let mut out = vec![];
-        loop {
-            let pos = self.location();
-            match parser(self) {
-                Ok(output) => {
-                    out.push(output);
-                },
-                Err(e) => {
-                    self.rewind_to_location(pos);
-                    if out.is_empty() {
-                        break Err(e)
-                    } else {                    
-                        break Ok(out);
-                    }
-                },
-            }
-        }
+        Many::new(self, parser)
+    }
+
+    /// Returns an iterator that, on each iteration, attempts to run the provided parser
+    /// on the remaining tokens. If the parser returns an error, no tokens will be consumed
+    /// and the error will be returned as the final iteration.
+    ///
+    /// # Example
+    /// 
+    /// ```rust
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// #[derive(Debug, PartialEq)]
+    /// enum Err { NotEnoughTokens, NotADigit(char) }
+    /// fn parse_digit_pair(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    ///     let n1 = tokens.next()
+    ///         .ok_or(Err::NotEnoughTokens)
+    ///         .and_then(|c| c.to_digit(10).ok_or(Err::NotADigit(c)))?;
+    ///     let n2 = tokens.next()
+    ///         .ok_or(Err::NotEnoughTokens)
+    ///         .and_then(|c| c.to_digit(10).ok_or(Err::NotADigit(c)))?;
+    ///     Ok(n1 + n2)
+    /// }
+    ///
+    /// let mut s = "12345abcde".into_tokens();
+    /// let mut digits_iter = s.many_err(|t| parse_digit_pair(t));
+    ///
+    /// assert_eq!(digits_iter.next(), Some(Ok(3)));
+    /// assert_eq!(digits_iter.next(), Some(Ok(7)));
+    /// assert_eq!(digits_iter.next(), Some(Err(Err::NotADigit('a'))));
+    /// assert_eq!(digits_iter.next(), None);
+    /// assert_eq!(s.remaining(), "5abcde");
+    /// ```
+    fn many_err<'a, F, Output, E>(&'a mut self, parser: F) -> ManyErr<'a, Self, F>
+    where
+        Self: Sized,
+        F: FnMut(&mut Self) -> Result<Output, E>
+    {
+        ManyErr::new(self, parser)
     }
 
     /// Ignore 0 or more instances of some parser.
@@ -294,17 +369,11 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.remaining(), "ababab");
     /// ```
     fn skip_many<F>(&mut self, mut parser: F)
-    where F: FnMut(&mut Self) -> bool
+    where
+        Self: Sized,
+        F: FnMut(&mut Self) -> bool
     {
-        loop {
-            let pos = self.location();
-            if !parser(self) {
-                // The provided parser failed to produce more output,
-                // so rewind to before it and end.
-                self.rewind_to_location(pos);
-                break;
-            }
-        }
+        self.many(|t| parser(t).then(|| ())).last();
     }
 
     /// Ignore 1 or more instances of some parser. If the provided parser
@@ -333,123 +402,23 @@ pub trait Tokens: Iterator {
     /// assert_eq!(digits, Err("aaah"));
     /// assert_eq!(s.remaining(), "ababababcabc");
     /// ```
-    fn skip_many1<F, E, Ignored>(&mut self, mut parser: F) -> Result<(), E> 
-    where F: FnMut(&mut Self) -> Result<Ignored, E>
+    fn skip_many1<F, E, Ignored>(&mut self, parser: F) -> Result<(), E> 
+    where
+        Self: Sized,
+        F: FnMut(&mut Self) -> Result<Ignored, E>
     {
-        let mut has_seen = false;
-        loop {
-            let pos = self.location();
-            if let Err(e) = parser(self) {
-                self.rewind_to_location(pos);
-                if !has_seen {
-                    break Err(e)
-                } else {                    
-                    break Ok(());
-                }
-            } else {
-                has_seen = true;
-            }
+        let mut iter = self.many_err(parser);
+        // Return error if immediate fail:
+        if let Some(Err(e)) = iter.next() {
+            return Err(e);
         }
+        // Else just consume whatever we can:
+        iter.last();
+        Ok(())
     }
 
-    /// Iterate over the tokens until the provided function returns false on a token.
-    /// Only consume the tokens that the function returned true for, and return them.
-    /// 
-    /// [`Iterator::take_while`] consumes the input, and so this method is more useful
-    /// if you'd like to continue iterating/parsing more input after running it. 
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut s = "12345abc".into_tokens();
-    /// let digits = s.take_tokens_while(|c| c.is_numeric());
-    /// assert_eq!(digits, vec!['1','2','3','4','5']);
-    /// assert_eq!(s.remaining(), "abc");
-    /// ```
-    fn take_tokens_while<F>(&mut self, mut f: F) -> Vec<Self::Item> 
-    where F: FnMut(&Self::Item) -> bool
-    {
-        let mut toks = vec![];
-        loop {
-            let pos = self.location();
-            match self.next() {
-                Some(item) if f(&item) => toks.push(item),
-                _ => {
-                    self.rewind_to_location(pos);
-                    break toks;
-                }
-            }
-        }
-    }
-
-    /// Iterate over the tokens until the provided function returns true on one.
-    /// Only consume the tokens that the function returned false for, and return them.
-    /// 
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut s = "abc12345".into_tokens();
-    /// let digits = s.take_tokens_until(|c| c.is_numeric());
-    /// assert_eq!(digits, vec!['a', 'b', 'c']);
-    /// assert_eq!(s.remaining(), "12345");
-    /// ```
-    fn take_tokens_until<F>(&mut self, mut f: F) -> Vec<Self::Item> 
-    where F: FnMut(&Self::Item) -> bool
-    {
-        self.take_tokens_while(|t| !f(t))
-    }
-
-    /// Iterate over the tokens until the provided function returns false on one.
-    /// Only consume the tokens that the function returned true for, ignoring them.
-    /// 
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut s = "12345abc".into_tokens();
-    /// s.skip_tokens_while(|c| c.is_numeric());
-    /// assert_eq!(s.remaining(), "abc");
-    /// ```
-    fn skip_tokens_while<F>(&mut self, mut f: F)
-    where F: FnMut(&Self::Item) -> bool
-    {
-        loop {
-            let pos = self.location();
-            match self.next() {
-                Some(item) if f(&item) => { /* item found; keep going */ }
-                _ => {
-                    self.rewind_to_location(pos);
-                    break;
-                }
-            }
-        }
-    }
-
-    /// Iterate over the tokens until the provided function returns true on one.
-    /// Only consume the tokens that the function returned false for, ignoring them.
-    /// 
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut s = "abc12345".into_tokens();
-    /// s.skip_tokens_until(|c| c.is_numeric());
-    /// assert_eq!(s.remaining(), "12345");
-    /// ```
-    fn skip_tokens_until<F>(&mut self, mut f: F)
-    where F: FnMut(&Self::Item) -> bool
-    {
-        self.skip_tokens_while(|t| !f(t))
-    }
-
-    /// Parses anything matching the `parser` function, and expects to parse something
-    /// matching the `separator` function between each one.
+    /// Return an iterator that parses anything matching the `parser` function, and expects 
+    /// to parse something matching the `separator` function between each one.
     ///
     /// # Example
     ///
@@ -462,91 +431,58 @@ pub trait Tokens: Iterator {
     /// }
     ///
     /// let mut s = "1,2,3,4,abc".into_tokens();
-    /// let digits = s.sep_by(|t| parse_digit(t), |t| t.token(','));
+    /// let digits: Vec<u32> = s.sep_by(|t| parse_digit(t), |t| t.token(',')).collect();
     /// assert_eq!(digits, vec![1,2,3,4]);
     /// assert_eq!(s.remaining(), ",abc");
     /// ```
-    fn sep_by<F, S, Output>(&mut self, mut parser: F, mut separator: S) -> Vec<Output> 
+    fn sep_by<'a, F, S, Output>(&'a mut self, parser: F, separator: S) -> SepBy<'a, Self, F, S>
     where
+        Self: Sized,
         F: FnMut(&mut Self) -> Option<Output>,
         S: FnMut(&mut Self) -> bool
     {
-        let mut out = vec![];
-        let mut last_out_pos = self.location();
-        loop {
-            match parser(self) {
-                Some(output) => {
-                    out.push(output);
-                    last_out_pos = self.location();
-        
-                    if !separator(self) {
-                        // No separator? rewind to after the last output and return
-                        // what we have so far.
-                        self.rewind_to_location(last_out_pos);
-                        break out;
-                    }
-                }
-                None => {
-                    // No output? We may have parsed a separator last time round!
-                    // Revert to after last output and return what we have.
-                    self.rewind_to_location(last_out_pos);
-                    break out;
-                }
-            }
-        }
+        SepBy::new(self, parser, separator)
     }
 
-    /// Parses anything matching the `parser` function, and expects to parse something
-    /// matching the `separator` function between each one. Returns the first parse error
-    /// encountered if no items are successfully parsed.
+    /// Return an iterator that parses anything matching the `parser` function, and expects 
+    /// to parse something matching the `separator` function between each one. Unlike [`Tokens::sep_by`],
+    /// this accepts parsers that return `Result`s, and returns the result on each iteration. Once
+    /// an error is hit, `None` is returned.
     ///
     /// # Example
     ///
     /// ```
     /// use yap::{ Tokens, IntoTokens };
     ///
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
-    ///     let c = tokens.next()?;
-    ///     c.to_digit(10)
+    /// #[derive(Debug, PartialEq)]
+    /// enum Err { NoMoreTokens, NotADigit(char) }
+    /// 
+    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    ///     let c = tokens.next().ok_or(Err::NoMoreTokens)?;
+    ///     c.to_digit(10).ok_or(Err::NotADigit(c))
     /// }
     ///
-    /// let mut s = "a,1,2,3".into_tokens();
-    /// let digits = s.sep_by1(|t| parse_digit(t).ok_or("aah"), |t| t.token(','));
-    /// assert_eq!(digits, Err("aah"));
-    /// assert_eq!(s.remaining(), "a,1,2,3");
+    /// let mut s = "1,2,a,1,2,3".into_tokens();
+    /// let mut digits_iter = s.sep_by_err(|t| parse_digit(t), |t| t.token(','));
+    /// assert_eq!(digits_iter.next(), Some(Ok(1)));
+    /// assert_eq!(digits_iter.next(), Some(Ok(2)));
+    /// assert_eq!(digits_iter.next(), Some(Err(Err::NotADigit('a'))));
+    /// assert_eq!(digits_iter.next(), None);
+    /// assert_eq!(s.remaining(), ",a,1,2,3");
     /// ```
-    fn sep_by1<F, S, E, Output>(&mut self, mut parser: F, mut separator: S) -> Result<Vec<Output>, E> 
+    fn sep_by_err<'a, F, S, E, Output>(&'a mut self, parser: F, separator: S) -> SepByErr<'a, Self, F, S>
     where
+        Self: Sized,
         F: FnMut(&mut Self) -> Result<Output, E>,
         S: FnMut(&mut Self) -> bool
     {
-        let mut out = vec![];
-        let mut last_out_pos = self.location();
-        loop {
-            match parser(self) {
-                Ok(output) => {
-                    out.push(output);
-                    last_out_pos = self.location();
-            
-                    if !separator(self) {
-                        // No separator? rewind to after the last output and return
-                        // what we have so far.
-                        self.rewind_to_location(last_out_pos);
-                        break Ok(out);
-                    }
-                },
-                Err(e) => {
-                    // Reset to last output parsed. Return error if no output 
-                    // was successfully parsed at all.
-                    self.rewind_to_location(last_out_pos);
-                    break if out.is_empty() { Err(e) } else { Ok(out) };
-                }
-            }
-        }
+        SepByErr::new(self, parser, separator)
     }
 
-    /// Parses anything matching the `parser` function, and expects to parse something
-    /// matching the `separator` function between each one.
+    /// Returns an iterator that parses anything matching the `parser` function, 
+    /// and expects to parse something matching the `separator` function between each one.
+    /// The iterator returns the output from both the `parser` and `separator` function,
+    /// which means that they are expected to return the same type.
     ///
     /// # Example
     ///
@@ -573,10 +509,11 @@ pub trait Tokens: Iterator {
     /// }
     ///
     /// let mut s = "1+2/3-4+abc".into_tokens();
-    /// let output = s.sep_by_all(
+    /// let output: Vec<_> = s.sep_by_all(
     ///     |t| parse_digit(t).map(OpOrDigit::Digit), 
     ///     |t| parse_op(t).map(OpOrDigit::Op)
-    /// );
+    /// ).collect();
+    /// 
     /// assert_eq!(output, vec![
     ///     OpOrDigit::Digit(1),
     ///     OpOrDigit::Op(Op::Plus),
@@ -588,79 +525,69 @@ pub trait Tokens: Iterator {
     /// ]);
     /// assert_eq!(s.remaining(), "+abc");
     /// ```
-    fn sep_by_all<F, S, Output>(&mut self, mut parser: F, mut separator: S) -> Vec<Output> 
+    fn sep_by_all<'a, F, S, Output>(&'a mut self, parser: F, separator: S) -> SepByAll<'a, Self, F, S, Output> 
     where
+        Self: Sized,
         F: FnMut(&mut Self) -> Option<Output>,
         S: FnMut(&mut Self) -> Option<Output>
     {
-        let mut out = vec![];
-        let mut last_out_pos = self.location();
-        loop {
-            match parser(self) {
-                Some(output) => {
-                    out.push(output);
-                    last_out_pos = self.location();
-        
-                    match separator(self) {
-                        Some(sep) => {
-                            // Push our separator output to the list, too.
-                            out.push(sep);
-                        },
-                        None => {
-                            // No separator? rewind to after the last output and return
-                            // what we have so far.
-                            self.rewind_to_location(last_out_pos);
-                            break out;
-                        }
-                    }
-                }
-                None => {
-                    // No output? We're either just starting, or we just parsed a separator,
-                    // so rewind and throw away the mis-parsed separator (if there is one).
-                    out.pop();
-                    self.rewind_to_location(last_out_pos);
-                    break out;
-                }
-            }
-        }
+        SepByAll::new(self, parser, separator)
     }
     
-    /// Identical to [`Tokens::sep_by_all`], except that if we fail to parse the first item, we
-    /// return the error that we ran into trying to do so, instead of returning an empty Vec.
-    fn sep_by1_all<F, S, E, Output>(&mut self, mut parser: F, mut separator: S) -> Result<Vec<Output>, E> 
+    /// Similar to [`Tokens::sep_by_all`], except that the iterator returned also hands back
+    /// the first error encountered when attempting to run our `parser`.
+    /// 
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// #[derive(PartialEq,Debug)]
+    /// enum Op { Plus, Minus, Divide }
+    /// #[derive(PartialEq,Debug)]
+    /// enum OpOrDigit { Op(Op), Digit(u32) }
+    /// #[derive(Debug, PartialEq)]
+    /// enum Err { NoMoreTokens, NotADigit(char) }
+    ///
+    /// fn parse_op(mut t: impl Tokens<Item=char>) -> Option<Op> {
+    ///     match t.next()? {
+    ///         '-' => Some(Op::Minus),
+    ///         '+' => Some(Op::Plus),
+    ///         '/' => Some(Op::Divide),
+    ///         _ => None
+    ///     }
+    /// }
+    /// 
+    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    ///     let c = tokens.next().ok_or(Err::NoMoreTokens)?;
+    ///     c.to_digit(10).ok_or(Err::NotADigit(c))
+    /// }
+    ///
+    /// let mut s = "1+2/3-4+abc".into_tokens();
+    /// let output: Vec<_> = s.sep_by_all_err(
+    ///     |t| parse_digit(t).map(OpOrDigit::Digit), 
+    ///     |t| parse_op(t).map(OpOrDigit::Op)
+    /// ).collect();
+    /// 
+    /// assert_eq!(output, vec![
+    ///     Ok(OpOrDigit::Digit(1)),
+    ///     Ok(OpOrDigit::Op(Op::Plus)),
+    ///     Ok(OpOrDigit::Digit(2)),
+    ///     Ok(OpOrDigit::Op(Op::Divide)),
+    ///     Ok(OpOrDigit::Digit(3)),
+    ///     Ok(OpOrDigit::Op(Op::Minus)),
+    ///     Ok(OpOrDigit::Digit(4)),
+    ///     Err(Err::NotADigit('a'))
+    /// ]);
+    /// assert_eq!(s.remaining(), "+abc");
+    /// ```
+    fn sep_by_all_err<'a, F, S, Output, E>(&'a mut self, parser: F, separator: S) -> SepByAllErr<'a, Self, F, S, Output> 
     where
+        Self: Sized,
         F: FnMut(&mut Self) -> Result<Output, E>,
         S: FnMut(&mut Self) -> Option<Output>
     {
-        let mut out = vec![];
-        let mut last_out_pos = self.location();
-        loop {
-            match parser(self) {
-                Ok(output) => {
-                    out.push(output);
-                    last_out_pos = self.location();
-            
-                    match separator(self) {
-                        Some(sep) => {
-                            // Push our separator output to the list, too.
-                            out.push(sep);
-                        },
-                        None => {
-                            // No separator? rewind to after the last output and return
-                            // what we have so far.
-                            self.rewind_to_location(last_out_pos);
-                            break Ok(out);
-                        }
-                    }
-                },
-                Err(e) => {
-                    // Reset to last output parsed. Return error if no output 
-                    // was successfully parsed at all.
-                    self.rewind_to_location(last_out_pos);
-                    break if out.is_empty() { Err(e) } else { Ok(out) };
-                }
-            }
-        }
+        SepByAllErr::new(self, parser, separator)
     }
 
     /// Parse some tokens optionally surrounded by the tokens consumed by the surrounding parser.
@@ -673,7 +600,7 @@ pub trait Tokens: Iterator {
     /// let mut s = "   hello    ".into_tokens();
     ///
     /// let hello: String = s.surrounded_by(
-    ///     |t| t.take_tokens_while(|c| c.is_ascii_alphabetic()).into_iter().collect(),
+    ///     |t| t.tokens_while(|c| c.is_ascii_alphabetic()).collect(),
     ///     |t| t.skip_tokens_while(|c| c.is_ascii_whitespace())
     /// );
     ///
@@ -731,7 +658,7 @@ pub trait Tokens: Iterator {
         match f(self) {
             Some(output) => Some(output),
             None => {
-                self.rewind_to_location(location);
+                self.set_location(location);
                 None
             }
         }
@@ -754,7 +681,7 @@ pub trait Tokens: Iterator {
     /// s.skip_optional(|t| parse_whitespace(t));
     /// let is_hello = s.tokens("hello".chars());
     /// s.skip_optional(|t| parse_whitespace(t));
-    /// let world: String = s.take_tokens_while(|c| c.is_ascii_alphabetic()).into_iter().collect();
+    /// let world: String = s.tokens_while(|c| c.is_ascii_alphabetic()).collect();
     ///
     /// // assert_eq!(is_hello, true);
     /// // assert_eq!(&*world, "world");
@@ -769,11 +696,11 @@ pub trait Tokens: Iterator {
 
 }
 
+/// Calling [`Tokens::location()`] returns an object that implements this trait.
 pub trait TokenLocation {
-    /// Return the current offset into the tokens that we've parsed up to so far.
-    /// The exact meaning of this can vary by implementation; when parsing slices, it
-    /// is index of the slice item we've consumed up to (it may equal `slice.len()`), and when
-    /// parsing `&str`'s it is the number of bytes (not characters) consumed so far.
+    /// Return the current offset into the tokens at the point at which this object 
+    /// was created. [`Tokens::offset()`] is simply a shorthand for calling this method
+    /// at the current location.
     /// 
     /// # Example
     /// 
@@ -798,8 +725,8 @@ where T: Tokens
     fn location(&self) -> Self::Location {
         <T as Tokens>::location(self)
     }
-    fn rewind_to_location(&mut self, location: Self::Location) {
-        <T as Tokens>::rewind_to_location(self, location)
+    fn set_location(&mut self, location: Self::Location) {
+        <T as Tokens>::set_location(self, location)
     }
     fn is_at_location(&self, location: Self::Location) -> bool {
         <T as Tokens>::is_at_location(self, location)
@@ -818,13 +745,12 @@ pub trait IntoTokens<Item> {
 mod test {
 
     use super::*;
-    use crate::parse;
 
     #[derive(Debug, PartialEq)]
     struct AB;
 
     // A simple parser that looks for "ab" in an input token stream.
-    // Notably, it doesn't try to rewind on failure. We expect the *many*
+    // Notably, it doesn't try to rewind on failure. We expect the `many`
     // combinators to take care of that sort of thing for us as needed.
     fn parse_ab(mut t: impl Tokens<Item=char>) -> Option<AB> {
         // match any sequence "ab".
@@ -837,96 +763,144 @@ mod test {
         }
     }
 
+    // Similar tot he above, except it reports a more specific reason for
+    // failure.
+    fn parse_ab_err(mut t: impl Tokens<Item=char>) -> Result<AB, ABErr> {
+        // match any sequence "ab".
+        let a = t.next().ok_or(ABErr::NotEnoughTokens)?;
+        let b = t.next().ok_or(ABErr::NotEnoughTokens)?;
+
+        if a != 'a' {
+            Err(ABErr::NotA)
+        } else if b != 'b' {
+            Err(ABErr::NotB) 
+        } else {
+            Ok(AB)
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    enum ABErr {
+        NotEnoughTokens,
+        NotA,
+        NotB
+    }
+
     #[test]
     fn test_many() {
-        let (abs, rest) = parse("acabab", |mut t| {
-            // Get as many ABs as we can from the input:
-            let abs = t.many(|t| parse_ab(t));
-            // Return the parsed "ab"s and whatever is remaining.
-            Ok::<_,()>((abs, t.collect::<Vec<char>>()))
-        }).unwrap();
+        // No input:
+        let mut t = "".into_tokens();
+        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let rest: Vec<char> = t.collect();
+
+        assert_eq!(abs.len(), 0);
+        assert_eq!(rest, vec![]);
+
+        // Invalid input after half is consumed:
+        let mut t = "acabab".into_tokens();
+        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 0);
         assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
 
-        let (abs, rest) = parse("abababaa", |mut t| {
-            let abs = t.many(|t| parse_ab(t));
-            Ok::<_,()>((abs, t.collect::<Vec<char>>()))
-        }).unwrap();
+        // 3 valid and then 1 half-invalid:
+        let mut t = "abababaa".into_tokens();
+        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 3);
         assert_eq!(rest, vec!['a', 'a']);
 
-        let (abs, rest) = parse("abababa", |mut t| {
-            let abs = t.many(|t| parse_ab(t));
-            Ok::<_,()>((abs, t.collect::<Vec<char>>()))
-        }).unwrap();
+        // End of tokens before can parse the fourth:
+        let mut t = "abababa".into_tokens();
+        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 3);
         assert_eq!(rest, vec!['a']);
     }
 
     #[test]
-    fn test_many1() {
-        // Need at least 1 successful parse, or error from parser is returned.
-        let res = parse("acabab", |mut t| {
-            t.many1(|t| parse_ab(t).ok_or("Could not parse ab!"))
-        });
-        assert_eq!(res, Err("Could not parse ab!"));
+    fn test_many_err() {
+        // No input:
+        let mut t = "".into_tokens();
+        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let rest: Vec<char> = t.collect();
 
-        let (abs, rest) = parse("abababaa", |mut t| {
-            let abs = t.many1(|t| parse_ab(t).ok_or(()))?;
-            Ok::<_,()>((abs, t.collect::<Vec<char>>()))
-        }).unwrap();
+        assert_eq!(abs, vec![Err(ABErr::NotEnoughTokens)]);
+        assert_eq!(rest, vec![]);
 
-        assert_eq!(abs.len(), 3);
+        // Invalid input immediately:
+        let mut t = "ccabab".into_tokens();
+        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let rest: Vec<char> = t.collect();
+
+        assert_eq!(abs, vec![Err(ABErr::NotA)]);
+        assert_eq!(rest, vec!['c', 'c', 'a', 'b', 'a', 'b']);
+
+        // Invalid input after half is consumed:
+        let mut t = "acabab".into_tokens();
+        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let rest: Vec<char> = t.collect();
+
+        assert_eq!(abs, vec![Err(ABErr::NotB)]);
+        assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
+
+        // 3 valid and then 1 half-invalid:
+        let mut t = "abababaa".into_tokens();
+        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let rest: Vec<char> = t.collect();
+
+        assert_eq!(abs, vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::NotB)]);
         assert_eq!(rest, vec!['a', 'a']);
 
-        let (abs, rest) = parse("abababa", |mut t| {
-            let abs = t.many1(|t| parse_ab(t).ok_or(()))?;
-            Ok::<_,()>((abs, t.collect::<Vec<char>>()))
-        }).unwrap();
+        // End of tokens before can parse the fourth:
+        let mut t = "abababa".into_tokens();
+        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let rest: Vec<char> = t.collect();
 
-        assert_eq!(abs.len(), 3);
+        assert_eq!(abs, vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::NotEnoughTokens)]);
         assert_eq!(rest, vec!['a']);
     }
 
     #[test]
     fn test_skip_many() {
-        let rest = parse("acabab", |mut t| {
-            // Skip as many ABs as we can from the input:
-            t.skip_many(|t| parse_ab(t).is_some());
-            // Return whatever is remaining.
-            Ok::<_,()>(t.collect::<Vec<char>>())
-        }).unwrap();
+        let mut t = "".into_tokens();
+        t.skip_many(|t| parse_ab(t).is_some());
+        let rest: Vec<char> = t.collect();
+        assert_eq!(rest, vec![]);
 
+        let mut t = "acabab".into_tokens();
+        t.skip_many(|t| parse_ab(t).is_some());
+        let rest: Vec<char> = t.collect();
         assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
 
-        let rest = parse("ababaab", |mut t| {
-            t.skip_many(|t| parse_ab(t).is_some());
-            Ok::<_,()>(t.collect::<Vec<char>>())
-        }).unwrap();
-
+        let mut t = "ababaab".into_tokens();
+        t.skip_many(|t| parse_ab(t).is_some());
+        let rest: Vec<char> = t.collect();
         assert_eq!(rest, vec!['a', 'a', 'b']);
     }
 
     #[test]
     fn test_skip_many1() {
-        let rest = parse("acabab", |mut t| {
-            // Skip as many ABs as we can from the input:
-            t.skip_many1(|t| parse_ab(t).ok_or("Can't parse AB"))?;
-            // Return whatever is remaining.
-            Ok::<_,&str>(t.collect::<Vec<char>>())
-        });
+        let mut t = "".into_tokens();
+        let res = t.skip_many1(|t| parse_ab_err(t));
+        let rest: String = t.collect();
+        assert_eq!(res, Err(ABErr::NotEnoughTokens));
+        assert_eq!(&*rest, "");
 
-        assert_eq!(rest, Err("Can't parse AB"));
+        let mut t = "acabab".into_tokens();
+        let res = t.skip_many1(|t| parse_ab_err(t));
+        let rest: String = t.collect();
+        assert_eq!(res, Err(ABErr::NotB));
+        assert_eq!(&*rest, "acabab");
 
-        let rest = parse("ababaab", |mut t| {
-            t.skip_many1(|t| parse_ab(t).ok_or(()))?;
-            Ok::<_,()>(t.collect::<Vec<char>>())
-        }).unwrap();
-
-        assert_eq!(rest, vec!['a', 'a', 'b']);
+        let mut t = "ababcbab".into_tokens();
+        let res = t.skip_many1(|t| parse_ab_err(t));
+        let rest: String = t.collect();
+        assert_eq!(res, Ok(()));
+        assert_eq!(&*rest, "cbab");
     }
 
 }

@@ -1,11 +1,9 @@
-/*! 
-This module contains types which implement the [`Tokens`] interface. You
-won't often need to import this module unless you wish to explicitly name
-the types in quesiton. 
-
-Prefer to remain generic where possible, for example by using 
-`t: impl Tokens<char>` over `t: StrTokens<'a>` as an argument.
-*/
+//! This module contains types which implement the [`Tokens`] interface. You
+//! won't often need to import this module unless you wish to explicitly name
+//! the types in question. 
+//!
+//! In most cases, you can remain generic by using `t: impl Tokens<char>` over 
+//! `t: StrTokens<'a>` as an argument to a function.
 use super::{ IntoTokens, Tokens, TokenLocation };
 
 /// This is what we are given back if we call `into_tokens()` on
@@ -57,7 +55,7 @@ impl <'a, Item> Tokens for SliceTokens<'a, Item> {
     fn location(&self) -> Self::Location {
         SliceTokensLocation(self.cursor)
     }
-    fn rewind_to_location(&mut self, location: Self::Location) {
+    fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
     fn is_at_location(&self, location: Self::Location) -> bool {
@@ -148,7 +146,7 @@ impl <'a> Tokens for StrTokens<'a> {
     fn location(&self) -> Self::Location {
         StrTokensLocation(self.cursor)
     }
-    fn rewind_to_location(&mut self, location: Self::Location) {
+    fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
     fn is_at_location(&self, location: Self::Location) -> bool {

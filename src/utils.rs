@@ -16,7 +16,7 @@
 /// );
 ///
 /// assert_eq!(res, Some(3));
-/// # assert_eq!(tokens.remaining(), " world");
+/// assert_eq!(tokens.remaining(), " world");
 /// ```
 ///
 /// You can also provide an alias to abbreviate the matches:
@@ -34,7 +34,7 @@
 /// );
 ///
 /// assert_eq!(res, Some(3));
-/// # assert_eq!(tokens.remaining(), " world");
+/// assert_eq!(tokens.remaining(), " world");
 /// ```
 ///
 /// This alias is simply a mutable borrow of the provided `tokens`, so that
@@ -64,7 +64,7 @@ macro_rules! one_of {
                 if let Some(res) = $e {
                     break Some(res);
                 }
-                $tokens.rewind_to_location(checkpoint);
+                $tokens.set_location(checkpoint);
             )+
             break None;
         };
@@ -77,7 +77,7 @@ macro_rules! one_of {
                 if let Some(res) = $e {
                     break Some(res);
                 }
-                $alias.rewind_to_location(checkpoint);
+                $alias.set_location(checkpoint);
             )+
             break None;
         };
