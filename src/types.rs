@@ -58,7 +58,7 @@ impl <'a, Item> Tokens for SliceTokens<'a, Item> {
     fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
-    fn is_at_location(&self, location: Self::Location) -> bool {
+    fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
 }
@@ -149,7 +149,7 @@ impl <'a> Tokens for StrTokens<'a> {
     fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
-    fn is_at_location(&self, location: Self::Location) -> bool {
+    fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
 }
