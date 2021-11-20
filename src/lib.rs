@@ -21,10 +21,7 @@
 //!     Tokens,
 //!     // Allows you to use `.into_tokens()` on strings and slices, 
 //!     // to get an instance of the above:
-//!     IntoTokens,
-//!     // Makes an `.offset()` method available on `tokens.location()`
-//!     // to tell you where we're up to in our token stream.
-//!     TokenLocation,
+//!     IntoTokens
 //! };
 //! 
 //! // Step 1: convert some tokens into something implementing `Tokens`
@@ -42,7 +39,7 @@
 //! 
 //! // The `Tokens` trait builds on `Iterator` and so looks similar,
 //! // as well as having all of the normal `Iterator` methods on it.
-//! fn parse_op(mut t: impl Tokens<Item=char>) -> Option<Op> {
+//! fn parse_op(t: &mut impl Tokens<Item=char>) -> Option<Op> {
 //!     match t.next()? {
 //!         '-' => Some(Op::Minus),
 //!         '+' => Some(Op::Plus),
@@ -51,7 +48,7 @@
 //!     }
 //! }
 //! 
-//! fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
+//! fn parse_digit(tokens: &mut impl Tokens<Item=char>) -> Option<u32> {
 //!     let c = tokens.next()?;
 //!     c.to_digit(10)
 //! }

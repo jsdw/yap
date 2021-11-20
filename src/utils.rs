@@ -2,31 +2,17 @@
 /// Return the first not-`None` result.
 ///
 /// # Examples
+/// 
+/// A basic example:
 ///
 /// ```
 /// use yap::{ Tokens, IntoTokens };
 ///
 /// let mut tokens = "hello world".into_tokens();
 ///
-/// let res = yap::one_of!(tokens;
-///     tokens.tokens("bye".chars()).then(|| 1),
-///     tokens.tokens("hi".chars()).then(|| 2),
-///     tokens.tokens("hello".chars()).then(|| 3),
-///     tokens.tokens("world".chars()).then(|| 4),
-/// );
-///
-/// assert_eq!(res, Some(3));
-/// assert_eq!(tokens.remaining(), " world");
-/// ```
-///
-/// You can also provide an alias to abbreviate the matches:
-///
-/// ```
-/// use yap::{ Tokens, IntoTokens };
-///
-/// let mut tokens = "hello world".into_tokens();
-///
-/// let res = yap::one_of!(tokens as ts;
+/// // The macro expects a mutable reference to your tokens:
+/// let ts = &mut tokens;
+/// let res = yap::one_of!(ts;
 ///     ts.tokens("bye".chars()).then(|| 1),
 ///     ts.tokens("hi".chars()).then(|| 2),
 ///     ts.tokens("hello".chars()).then(|| 3),
@@ -36,10 +22,27 @@
 /// assert_eq!(res, Some(3));
 /// assert_eq!(tokens.remaining(), " world");
 /// ```
+/// 
+/// You can declare an alias from some expression that's passed in, too.
+/// Handy for abbreviating, or in this case, adding the required mut 
+/// reference:
+/// 
+/// ```
+/// use yap::{ Tokens, IntoTokens };
 ///
-/// This alias is simply a mutable borrow of the provided `tokens`, so that
-/// after the macro is finished, you can continue using `tokens`.
+/// let mut tokens = "hello world".into_tokens();
 ///
+/// let res = yap::one_of!(ts from &mut tokens;
+///     ts.tokens("bye".chars()).then(|| 1),
+///     ts.tokens("hi".chars()).then(|| 2),
+///     ts.tokens("hello".chars()).then(|| 3),
+///     ts.tokens("world".chars()).then(|| 4),
+/// );
+///
+/// assert_eq!(res, Some(3));
+/// assert_eq!(tokens.remaining(), " world");
+/// ```
+/// 
 /// If an expression returns `None`, no tokens will be consumed:
 ///
 /// ```
@@ -47,7 +50,7 @@
 ///
 /// let mut tokens = "hello world".into_tokens();
 ///
-/// let res: Option<()> = yap::one_of!(tokens as ts;
+/// let res: Option<()> = yap::one_of!(ts from &mut tokens;
 ///     // This explicit iteration will be rewound if None is returned:
 ///     { ts.next(); ts.next(); None },
 /// );
@@ -62,7 +65,7 @@ macro_rules! one_of {
             $(
                 let checkpoint = $tokens.location();
                 {
-                    let mut $tokens = &mut $tokens;
+                    let $tokens = &mut *$tokens;
                     if let Some(res) = $e {
                         break Some(res);
                     }
@@ -72,19 +75,19 @@ macro_rules! one_of {
             break None;
         }
     }};
-    ($tokens:ident as $alias:ident; $( $e:expr ),+ $(,)?) => {{
+    ($alias:ident from $tokens:expr; $( $e:expr ),+ $(,)?) => {{
         loop {
             $(
-                let checkpoint = $alias.location();
+                let checkpoint = $tokens.location();
                 {
-                    let mut $alias = &mut $tokens;
+                    let $alias = &mut *$tokens;
                     if let Some(res) = $e {
                         break Some(res);
                     }
                 }
-                $alias.set_location(checkpoint);
+                $tokens.set_location(checkpoint);
             )+
             break None;
         }
-    }}
+    }};
 }

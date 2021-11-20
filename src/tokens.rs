@@ -40,23 +40,23 @@ pub trait Tokens: Iterator {
     /// # Example
     ///
     /// ```rust
-    /// use yap::{ Tokens, IntoTokens };
+    /// use yap::{ Tokens, IntoTokens, TokenLocation };
     ///
     /// let mut s = "abcde".into_tokens();
     ///
     /// let location = s.location();
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
-    /// assert_eq!(s.offset(), 1);
+    /// assert_eq!(s.location().offset(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
-    /// assert_eq!(s.offset(), 2);
+    /// assert_eq!(s.location().offset(), 2);
     ///
     /// s.set_location(location);
     ///
     /// assert_eq!(s.next().unwrap(), 'a');
-    /// assert_eq!(s.offset(), 1);
+    /// assert_eq!(s.location().offset(), 1);
     /// assert_eq!(s.next().unwrap(), 'b');
-    /// assert_eq!(s.offset(), 2);
+    /// assert_eq!(s.location().offset(), 2);
     /// ```
     fn location(&self) -> Self::Location;
 
@@ -272,7 +272,7 @@ pub trait Tokens: Iterator {
     ///
     /// ```
     /// use yap::{ Tokens, IntoTokens };
-    ///
+    /// 
     /// let mut s = "12345abc".into_tokens();
     /// let digits: String = s.tokens_while(|c| c.is_numeric()).collect();
     /// assert_eq!(&*digits, "12345");
@@ -316,7 +316,7 @@ pub trait Tokens: Iterator {
     /// ```rust
     /// use yap::{ Tokens, IntoTokens };
     ///
-    /// fn parse_digit_pair(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
+    /// fn parse_digit_pair(tokens: &mut impl Tokens<Item=char>) -> Option<u32> {
     ///     let d1 = tokens.next()?;
     ///     let d2 = tokens.next()?;
     ///     // Return the result of adding the 2 digits we saw:
@@ -348,7 +348,7 @@ pub trait Tokens: Iterator {
     ///
     /// #[derive(Debug, PartialEq)]
     /// enum Err { NotEnoughTokens, NotADigit(char) }
-    /// fn parse_digit_pair(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    /// fn parse_digit_pair(tokens: &mut impl Tokens<Item=char>) -> Result<u32, Err> {
     ///     let n1 = tokens.next()
     ///         .ok_or(Err::NotEnoughTokens)
     ///         .and_then(|c| c.to_digit(10).ok_or(Err::NotADigit(c)))?;
@@ -383,7 +383,7 @@ pub trait Tokens: Iterator {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// struct ABC;
-    /// fn parse_abc(mut tokens: impl Tokens<Item=char>) -> Option<ABC> {
+    /// fn parse_abc(tokens: &mut impl Tokens<Item=char>) -> Option<ABC> {
     ///     let a = tokens.next()?;
     ///     let b = tokens.next()?;
     ///     let c = tokens.next()?;
@@ -416,7 +416,7 @@ pub trait Tokens: Iterator {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// struct ABC;
-    /// fn parse_abc(mut tokens: impl Tokens<Item=char>) -> Option<ABC> {
+    /// fn parse_abc(tokens: &mut impl Tokens<Item=char>) -> Option<ABC> {
     ///     let a = tokens.next()?;
     ///     let b = tokens.next()?;
     ///     let c = tokens.next()?;
@@ -465,7 +465,7 @@ pub trait Tokens: Iterator {
     /// ```
     /// use yap::{ Tokens, IntoTokens };
     ///
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
+    /// fn parse_digit(tokens: &mut impl Tokens<Item=char>) -> Option<u32> {
     ///     let c = tokens.next()?;
     ///     c.to_digit(10)
     /// }
@@ -497,7 +497,7 @@ pub trait Tokens: Iterator {
     /// #[derive(Debug, PartialEq)]
     /// enum Err { NoMoreTokens, NotADigit(char) }
     /// 
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    /// fn parse_digit(tokens: &mut impl Tokens<Item=char>) -> Result<u32, Err> {
     ///     let c = tokens.next().ok_or(Err::NoMoreTokens)?;
     ///     c.to_digit(10).ok_or(Err::NotADigit(c))
     /// }
@@ -534,8 +534,8 @@ pub trait Tokens: Iterator {
     /// #[derive(PartialEq,Debug)]
     /// enum OpOrDigit { Op(Op), Digit(u32) }
     ///
-    /// fn parse_op(mut t: impl Tokens<Item=char>) -> Option<Op> {
-    ///     match t.next()? {
+    /// fn parse_op(tokens: &mut impl Tokens<Item=char>) -> Option<Op> {
+    ///     match tokens.next()? {
     ///         '-' => Some(Op::Minus),
     ///         '+' => Some(Op::Plus),
     ///         '/' => Some(Op::Divide),
@@ -543,7 +543,7 @@ pub trait Tokens: Iterator {
     ///     }
     /// }
     ///
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Option<u32> {
+    /// fn parse_digit(tokens: &mut impl Tokens<Item=char>) -> Option<u32> {
     ///     let c = tokens.next()?;
     ///     c.to_digit(10)
     /// }
@@ -589,8 +589,8 @@ pub trait Tokens: Iterator {
     /// #[derive(Debug, PartialEq)]
     /// enum Err { NoMoreTokens, NotADigit(char) }
     ///
-    /// fn parse_op(mut t: impl Tokens<Item=char>) -> Option<Op> {
-    ///     match t.next()? {
+    /// fn parse_op(tokens: &mut impl Tokens<Item=char>) -> Option<Op> {
+    ///     match tokens.next()? {
     ///         '-' => Some(Op::Minus),
     ///         '+' => Some(Op::Plus),
     ///         '/' => Some(Op::Divide),
@@ -598,7 +598,7 @@ pub trait Tokens: Iterator {
     ///     }
     /// }
     /// 
-    /// fn parse_digit(mut tokens: impl Tokens<Item=char>) -> Result<u32, Err> {
+    /// fn parse_digit(tokens: &mut impl Tokens<Item=char>) -> Result<u32, Err> {
     ///     let c = tokens.next().ok_or(Err::NoMoreTokens)?;
     ///     c.to_digit(10).ok_or(Err::NotADigit(c))
     /// }
@@ -714,7 +714,7 @@ pub trait Tokens: Iterator {
     ///
     /// let mut s = "   helloworld".into_tokens();
     ///
-    /// fn parse_whitespace(mut t: impl Tokens<Item=char>) {
+    /// fn parse_whitespace(t: &mut impl Tokens<Item=char>) {
     ///     t.skip_tokens_while(|c| c.is_ascii_whitespace());
     /// }
     ///
@@ -757,22 +757,6 @@ pub trait TokenLocation {
     fn offset(&self) -> usize;
 }
 
-impl <'a, T> Tokens for &'a mut T 
-where T: Tokens
-{
-    type Location = T::Location;
-
-    fn location(&self) -> Self::Location {
-        <T as Tokens>::location(self)
-    }
-    fn set_location(&mut self, location: Self::Location) {
-        <T as Tokens>::set_location(self, location)
-    }
-    fn is_at_location(&self, location: &Self::Location) -> bool {
-        <T as Tokens>::is_at_location(self, location)
-    }
-}
-
 /// A trait that is implemented by anything which can be converted into an 
 /// object implementing the [`Tokens`] trait.
 pub trait IntoTokens<Item> {
@@ -792,7 +776,7 @@ mod test {
     // A simple parser that looks for "ab" in an input token stream.
     // Notably, it doesn't try to rewind on failure. We expect the `many`
     // combinators to take care of that sort of thing for us as needed.
-    fn parse_ab(mut t: impl Tokens<Item=char>) -> Option<AB> {
+    fn parse_ab(t: &mut impl Tokens<Item=char>) -> Option<AB> {
         // match any sequence "ab".
         let a = t.next()?;
         let b = t.next()?;
@@ -805,7 +789,7 @@ mod test {
 
     // Similar tot he above, except it reports a more specific reason for
     // failure.
-    fn parse_ab_err(mut t: impl Tokens<Item=char>) -> Result<AB, ABErr> {
+    fn parse_ab_err(t: &mut impl Tokens<Item=char>) -> Result<AB, ABErr> {
         // match any sequence "ab".
         let a = t.next().ok_or(ABErr::NotEnoughTokens)?;
         let b = t.next().ok_or(ABErr::NotEnoughTokens)?;
