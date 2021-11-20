@@ -1,5 +1,6 @@
 use crate::Tokens;
 
+/// Produced by running [`crate::tokens::Tokens::iter_from_to`].
 pub struct IterFromTo<'a, T: Tokens> {
     tokens: &'a mut T,
     original: T::Location,

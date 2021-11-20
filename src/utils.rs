@@ -1,4 +1,4 @@
-/// Pass the provided tokens into each function, one after the other.
+/// Pass the provided tokens into each expression, one after the other.
 /// Return the first not-`None` result.
 ///
 /// # Examples
@@ -57,29 +57,34 @@
 /// ```
 #[macro_export]
 macro_rules! one_of {
-    ($tokens:ident; $( $e:expr ),+ $(,)?) => {
+    ($tokens:ident; $( $e:expr ),+ $(,)?) => {{
         loop {
             $(
                 let checkpoint = $tokens.location();
-                if let Some(res) = $e {
-                    break Some(res);
+                {
+                    let mut $tokens = &mut $tokens;
+                    if let Some(res) = $e {
+                        break Some(res);
+                    }
                 }
                 $tokens.set_location(checkpoint);
             )+
             break None;
-        };
-    };
-    ($tokens:ident as $alias:ident; $( $e:expr ),+ $(,)?) => {
+        }
+    }};
+    ($tokens:ident as $alias:ident; $( $e:expr ),+ $(,)?) => {{
         loop {
-            let mut $alias = &mut $tokens;
             $(
                 let checkpoint = $alias.location();
-                if let Some(res) = $e {
-                    break Some(res);
+                {
+                    let mut $alias = &mut $tokens;
+                    if let Some(res) = $e {
+                        break Some(res);
+                    }
                 }
                 $alias.set_location(checkpoint);
             )+
             break None;
-        };
-    }
+        }
+    }}
 }

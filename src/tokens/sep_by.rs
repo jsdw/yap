@@ -1,6 +1,6 @@
 use crate::Tokens;
 
-/// Produced by running [`crate::tokens::Tokens::many`].
+/// Produced by running [`crate::tokens::Tokens::sep_by`].
 #[derive(Debug)]
 pub struct SepBy<'a, T, F, S> {
     tokens: &'a mut T,

@@ -1,6 +1,6 @@
 use crate::Tokens;
 
-/// Produced by running [`crate::tokens::Tokens::many`].
+/// Produced by running [`crate::tokens::Tokens::sep_by_err`].
 #[derive(Debug)]
 pub struct SepByErr<'a, T, F, S> {
     tokens: &'a mut T,
