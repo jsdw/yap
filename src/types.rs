@@ -170,3 +170,74 @@ impl <'a> IntoTokens<char> for &'a str {
         }
     }
 }
+
+/// Embed some context with your [`Tokens`] implementation to
+/// access at any time. Use [`Tokens::with_context`] to produce this.
+pub struct WithContext<T, C> {
+    tokens: T,
+    context: C
+}
+
+/// Embed some context with a mutable reference to your [`Tokens`] to
+/// access at any time. Use [`Tokens::with_context`] to produce this.
+pub struct WithContextMut<T, C> {
+    tokens: T,
+    context: C
+}
+
+// `WithContext` and `WithContextMut` have almost identical looking impls,
+// but one only works with `Tokens`, and one with `&mut Tokens` (because
+// those impls would conflict if both on the same struct).
+macro_rules! with_context_impls {
+    ($name:ident $( $($mut:tt)+ )?) => {
+        impl <T, C> $name<T, C> {
+            /// Provide something that implements [`Tokens`] and
+            /// some arbitrary context.
+            pub(crate) fn new(tokens: T, context: C) -> Self {
+                Self { tokens, context }
+            }
+        
+            /// Return the original tokens and context
+            pub fn into_parts(self) -> (T, C) {
+                (self.tokens, self.context)
+            }
+        
+            /// Access the context
+            pub fn context(&self) -> &C {
+                &self.context
+            }
+        
+            /// Mutably access the context
+            pub fn context_mut(&mut self) -> &mut C {
+                &mut self.context
+            }
+        }
+        
+        impl <T, C> Tokens for $name<$( $($mut)+ )? T, C> 
+        where T: Tokens {
+            type Location = T::Location;
+        
+            fn location(&self) -> Self::Location {
+                self.tokens.location()
+            }
+            fn set_location(&mut self, location: Self::Location) {
+                self.tokens.set_location(location)
+            }
+            fn is_at_location(&self, location: &Self::Location) -> bool {
+                self.tokens.is_at_location(location)
+            }
+        }
+        
+        impl <T, C> Iterator for $name<$( $($mut)+ )? T, C> 
+        where T: Iterator {
+            type Item = T::Item;
+            fn next(&mut self) -> Option<Self::Item> {
+                self.tokens.next()
+            }
+        }
+    }
+}
+
+with_context_impls!(WithContext);
+with_context_impls!(WithContextMut &mut);
+

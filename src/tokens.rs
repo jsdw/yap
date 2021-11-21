@@ -24,9 +24,11 @@ pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
 pub use iter_from_to::IterFromTo;
 
+use crate::types::{ WithContext, WithContextMut };
+
 /// The tokens trait builds on the [`Iterator`] trait, and adds a bunch of useful methods
 /// for parsing tokens from the underlying iterable type.
-pub trait Tokens: Iterator {
+pub trait Tokens: Iterator + Sized {
 
     /// An object which can be used to reset the token stream 
     /// to some position.
@@ -81,6 +83,74 @@ pub trait Tokens: Iterator {
     /// ```
     fn is_at_location(&self, location: &Self::Location) -> bool;
 
+    /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
+    /// [`Tokens`], and so has can be used in much the same way. Since this consumes your tokens, it's
+    /// better suited to permanent context that you'd like throughout the parsing.
+    /// 
+    /// See [`Tokens::with_context_mut`] for a version that's easier to attach temporary context with.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// use yap::{ Tokens, IntoTokens, types::WithContext };
+    /// 
+    /// fn skip_digits(toks: &mut WithContext<impl Tokens<Item=char>, usize>) {
+    ///     let n_skipped = toks.skip_tokens_while(|c| c.is_digit(10));
+    ///     *toks.context_mut() += n_skipped;
+    /// }
+    /// 
+    /// let mut tokens = "123abc456".into_tokens().with_context(0usize);
+    /// 
+    /// skip_digits(&mut tokens);
+    /// tokens.skip_tokens_while(|c| c.is_alphabetic());
+    /// skip_digits(&mut tokens);
+    /// 
+    /// assert_eq!(*tokens.context(), 6);
+    /// ```
+    fn with_context<C>(self, context: C) -> WithContext<Self, C> {
+        WithContext::new(self, context)
+    }
+
+    /// Unlike [`Tokens::with_context`], which consumes the tokens, this borrows them mutably, allowing it to
+    /// be used when you only have a mutable reference to tokens (which is a common function signature to use),
+    /// and making it better suited to attaching temporary contexts.
+    /// 
+    /// # Example
+    /// 
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    /// 
+    /// fn count_digit_comma_calls(toks: &mut impl Tokens<Item=char>) -> (u8, u8) {
+    ///     let mut counts = (0u8, 0u8);
+    ///     toks.with_context_mut(&mut counts).sep_by(
+    ///         |t| {
+    ///             t.context_mut().0 += 1;
+    ///             let n_skipped = t.skip_tokens_while(|c| c.is_digit(10));
+    ///             if n_skipped == 0 { None } else { Some(()) }
+    ///         },
+    ///         |t| {
+    ///             t.context_mut().1 += 1;
+    ///             t.token(',')
+    ///         }
+    ///     ).last();
+    ///     counts
+    /// }
+    /// 
+    /// let n: usize = 0;
+    /// let mut tokens = "123,4,56,1,34,1".into_tokens();
+    /// 
+    /// let (digits, seps) = count_digit_comma_calls(&mut tokens);
+    /// 
+    /// assert_eq!(tokens.remaining().len(), 0);
+    /// // digits parsed 6 times:
+    /// assert_eq!(digits, 6);
+    /// // Attempted to parse seps 6 times; failure on last ends it:
+    /// assert_eq!(seps, 6);
+    /// ```
+    fn with_context_mut<C>(&mut self, context: C) -> WithContextMut<&mut Self, C> {
+        WithContextMut::new(self, context)
+    }
+
     /// Iterate through toikens starting at `from`, with the last token produced being the one just
     /// before the `to` location is hit (ie, equivalent to the non-inclusive `from..to` range.
     /// 
@@ -119,10 +189,7 @@ pub trait Tokens: Iterator {
     /// assert_eq!(s.next(), Some('o'));
     /// assert_eq!(s.next(), Some('p'));
     /// ```
-    fn iter_from_to<'a>(&'a mut self, from: Self::Location, to: Self::Location) -> IterFromTo<'a, Self>
-    where 
-        Self: Sized 
-    {
+    fn iter_from_to<'a>(&'a mut self, from: Self::Location, to: Self::Location) -> IterFromTo<'a, Self> {
         IterFromTo::new(self, self.location(), from, to)
     }
 
@@ -280,7 +347,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn tokens_while<'a, F>(&'a mut self, f: F) -> TokensWhile<'a, Self, F>
     where
-        Self: Sized, 
         F: FnMut(&Self::Item) -> bool
     {
         TokensWhile::new(self, f)
@@ -302,7 +368,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn skip_tokens_while<F>(&mut self, f: F) -> usize
     where
-        Self: Sized, 
         F: FnMut(&Self::Item) -> bool
     {
         self.tokens_while(f).count()
@@ -331,7 +396,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn many<'a, F, Output>(&'a mut self, parser: F) -> Many<'a, Self, F>
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Option<Output>
     {
         Many::new(self, parser)
@@ -369,7 +433,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn many_err<'a, F, Output, E>(&'a mut self, parser: F) -> ManyErr<'a, Self, F>
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Result<Output, E>
     {
         ManyErr::new(self, parser)
@@ -401,7 +464,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn skip_many<F>(&mut self, mut parser: F) -> usize
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> bool
     {
         self.many(|t| parser(t).then(|| ())).count()
@@ -441,7 +503,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn skip_many1<F, E, Ignored>(&mut self, parser: F) -> Result<usize, E> 
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Result<Ignored, E>
     {
         let mut iter = self.many_err(parser);
@@ -477,7 +538,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn sep_by<'a, F, S, Output>(&'a mut self, parser: F, separator: S) -> SepBy<'a, Self, F, S>
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Option<Output>,
         S: FnMut(&mut Self) -> bool
     {
@@ -512,7 +572,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn sep_by_err<'a, F, S, E, Output>(&'a mut self, parser: F, separator: S) -> SepByErr<'a, Self, F, S>
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Result<Output, E>,
         S: FnMut(&mut Self) -> bool
     {
@@ -567,7 +626,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn sep_by_all<'a, F, S, Output>(&'a mut self, parser: F, separator: S) -> SepByAll<'a, Self, F, S, Output> 
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Option<Output>,
         S: FnMut(&mut Self) -> Option<Output>
     {
@@ -623,7 +681,6 @@ pub trait Tokens: Iterator {
     /// ```
     fn sep_by_all_err<'a, F, S, Output, E>(&'a mut self, parser: F, separator: S) -> SepByAllErr<'a, Self, F, S, Output> 
     where
-        Self: Sized,
         F: FnMut(&mut Self) -> Result<Output, E>,
         S: FnMut(&mut Self) -> Option<Output>
     {
