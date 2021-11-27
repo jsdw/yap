@@ -10,7 +10,7 @@ combinator library, but without immersing you into a world of parser combinators
 to use a novel return type, library-provided errors or parser-combinator based control flow. It hopes
 to sacrifice conciseness in exchange for simplicity.
 
-Some specific features/goals:
+**Some specific features/goals:**
 - Lots of examples. Every function provided comes with example usage.
 - Prioritise simplicity at the cost of verbosity.
 - Be iterator-centric. Where applicable, combinators return iterators, so you can lean on the `Iterator`
@@ -20,7 +20,7 @@ Some specific features/goals:
   variants incase you need error information when they don't otherwise hand back errors for simplicity.
 - Location information should always be available, so that you can tell users where something went wrong.
   see `Tokens::offset`
-- Backtracking by default. Coming from Haskells Parsec, this feels like the sensible default. It means that
+- Backtracking by default. Coming from Haskell's Parsec, this feels like the sensible default. It means that
   if one of the provided parsing functions fails to parse what you asked for, it won't consume any input 
   trying.
 - Expose all of the "low level" functions. You can save and rewind to locations as needed (see `Token::location`), 
