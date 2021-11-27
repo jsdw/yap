@@ -1,5 +1,6 @@
 /*!
-This crate helps you to parse input strings and slices by building on the [`Iterator`] interface.
+This small, zero-dependency crate helps you to parse input strings and slices by building on the [`Iterator`]
+interface.
 
 The aim of this crate is to provide the sorts of functions you'd come to expect from a parser
 combinator library, but without immersing you into a world of parser combinators, and forcing you

@@ -1,6 +1,6 @@
 [package]
 name = "yap"
-version = "0.6.2"
+version = "0.7.0"
 edition = "2021"
 authors = ["James Wilson <james@jsdw.me>"]
 description = "Yet Another Parser library. A lightweight, dependency free, parser combinator inspired set of utility methods to help with parsing strings and slices."
@@ -9,7 +9,11 @@ homepage = "https://github.com/jsdw/yap"
 license = "MIT"
 categories = ["parsing"]
 
-[dependencies]
+include = [
+  "Cargo.toml",
+  "LICENSE",
+  "src/**/*",
+]
 
 [dev-dependencies]
 logos = "0.12.0"

@@ -1,7 +1,7 @@
 use crate::Tokens;
 
-/// Produced by running [`crate::tokens::Tokens::iter_from_to`].
-pub struct IterFromTo<'a, T: Tokens> {
+/// Produced by running [`crate::tokens::Tokens::slice`].
+pub struct Slice<'a, T: Tokens> {
     tokens: &'a mut T,
     original: T::Location,
     started: bool,
@@ -9,9 +9,9 @@ pub struct IterFromTo<'a, T: Tokens> {
     to: T::Location
 }
 
-impl <'a, T: Tokens> IterFromTo<'a, T> {
-    pub(crate) fn new(tokens: &'a mut T, current: T::Location, from: T::Location, to: T::Location) -> IterFromTo<'a, T> {
-        IterFromTo {
+impl <'a, T: Tokens> Slice<'a, T> {
+    pub(crate) fn new(tokens: &'a mut T, current: T::Location, from: T::Location, to: T::Location) -> Slice<'a, T> {
+        Slice {
             tokens,
             original: current,
             from,
@@ -21,7 +21,7 @@ impl <'a, T: Tokens> IterFromTo<'a, T> {
     }
 }
 
-impl <'a, T: Tokens> Iterator for IterFromTo<'a, T> {
+impl <'a, T: Tokens> Iterator for Slice<'a, T> {
     type Item = T::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -41,7 +41,22 @@ impl <'a, T: Tokens> Iterator for IterFromTo<'a, T> {
     }
 }
 
-impl <'a, T: Tokens> Drop for IterFromTo<'a, T> {
+// We can also treat this slice of tokens as tokens, too:
+impl <'a, T: Tokens> Tokens for Slice<'a, T> {
+    type Location = T::Location;
+
+    fn location(&self) -> Self::Location {
+        self.tokens.location()
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        self.tokens.set_location(location)
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.tokens.is_at_location(location)
+    }
+}
+
+impl <'a, T: Tokens> Drop for Slice<'a, T> {
     fn drop(&mut self) {
         // Reset the location on drop so that the tokens 
         // remain unaffected by this iterator:

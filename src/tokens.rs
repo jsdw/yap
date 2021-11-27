@@ -10,7 +10,7 @@ mod sep_by;
 mod sep_by_err;
 mod sep_by_all;
 mod sep_by_all_err;
-mod iter_from_to;
+mod slice;
 
 use std::borrow::Borrow;
 
@@ -22,7 +22,7 @@ pub use sep_by::SepBy;
 pub use sep_by_err::SepByErr;
 pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
-pub use iter_from_to::IterFromTo;
+pub use slice::Slice;
 
 use crate::types::{ WithContext, WithContextMut };
 
@@ -115,6 +115,12 @@ pub trait Tokens: Iterator + Sized {
     /// be used when you only have a mutable reference to tokens (which is a common function signature to use),
     /// and making it better suited to attaching temporary contexts.
     /// 
+    /// Be aware that if you attach context in a function called recursively, the type checker may shout at you 
+    /// for contructing a type like `WithContextMut<WithContextMut<WithContextMut<..>>>`. In these cases, you 
+    /// can "break the cycle" by removing the original `WithContextMut` by using 
+    /// [`crate::types::WithContextMut::into_parts()`] before wrapping the tokens in a new context for the recursive
+    /// call.
+    /// 
     /// # Example
     /// 
     /// ```
@@ -151,11 +157,16 @@ pub trait Tokens: Iterator + Sized {
         WithContextMut::new(self, context)
     }
 
-    /// Iterate through toikens starting at `from`, with the last token produced being the one just
-    /// before the `to` location is hit (ie, equivalent to the non-inclusive `from..to` range.
+    /// Return a slice of tokens starting at the `to` location provided and ending just prior to
+    /// the `from` location provided (ie equivalent to the range `to..from`).
     /// 
-    /// Note: the iterator prevents the original tokens from being used until it's dropped, and resets
-    /// the original tokens to their current location on `Drop`.
+    /// The slice returned from implements [`Iterator`] and [`Tokens`], so you can use the full range
+    /// of parsing functions on it, or simply collect up the slice of tokens as you wish.
+    /// 
+    /// **Note:** the slice returned from this prevents the original tokens from being used until 
+    /// it's dropped, and resets the original tokens to their current location on `Drop`. if you
+    /// [`std::mem::forget`] it, the original token location will equal whatever the slice location
+    /// was when it was forgotten.
     /// 
     /// # Example
     /// 
@@ -173,7 +184,7 @@ pub trait Tokens: Iterator + Sized {
     /// assert_eq!(s.next(), Some('l'));
     /// 
     /// // Iterating the from..to range given:
-    /// let vals: String = s.iter_from_to(from.clone(), to.clone()).collect();
+    /// let vals: String = s.slice(from.clone(), to.clone()).collect();
     /// assert_eq!(&*vals, "fghij");
     /// 
     /// // After the above is dropped, we can continue
@@ -182,15 +193,15 @@ pub trait Tokens: Iterator + Sized {
     /// assert_eq!(s.next(), Some('n'));
     /// 
     /// // We can iterate this range again as we please:
-    /// let vals: String = s.iter_from_to(from, to).collect();
+    /// let vals: String = s.slice(from, to).collect();
     /// assert_eq!(&*vals, "fghij");
     /// 
     /// // And the original remains unaffected..
     /// assert_eq!(s.next(), Some('o'));
     /// assert_eq!(s.next(), Some('p'));
     /// ```
-    fn iter_from_to<'a>(&'a mut self, from: Self::Location, to: Self::Location) -> IterFromTo<'a, Self> {
-        IterFromTo::new(self, self.location(), from, to)
+    fn slice<'a>(&'a mut self, from: Self::Location, to: Self::Location) -> Slice<'a, Self> {
+        Slice::new(self, self.location(), from, to)
     }
 
     /// Return the current offset into the tokens that we've parsed up to so far.
@@ -214,7 +225,10 @@ pub trait Tokens: Iterator + Sized {
         self.location().offset()
     }
 
-    /// Get back the next item in the input without consuming it.
+    /// Return the next item in the input without consuming it.
+    /// 
+    /// Prefer this to using the `peekable` iterator method, which consumes
+    /// the tokens, and internally keeps hold of the peeked state itself.
     /// 
     /// # Example
     /// 
@@ -353,7 +367,7 @@ pub trait Tokens: Iterator + Sized {
     }
 
     /// Iterate over the tokens until the provided function returns false on one.
-    /// Only consume the tokens that the function returned true for, ignoring them.
+    /// Only consume the tokens that the function returned true for, and ignore them.
     /// 
     /// # Example
     ///
@@ -547,7 +561,7 @@ pub trait Tokens: Iterator + Sized {
     /// Return an iterator that parses anything matching the `parser` function, and expects 
     /// to parse something matching the `separator` function between each one. Unlike [`Tokens::sep_by`],
     /// this accepts parsers that return `Result`s, and returns the result on each iteration. Once
-    /// an error is hit, `None` is returned.
+    /// an error is hit, `None` is returned thereafter.
     ///
     /// # Example
     ///
@@ -687,7 +701,7 @@ pub trait Tokens: Iterator + Sized {
         SepByAllErr::new(self, parser, separator)
     }
 
-    /// Parse some tokens optionally surrounded by the tokens consumed by the surrounding parser.
+    /// Parse some tokens that are optionally surrounded by the result of a `surrounding` parser.
     ///
     /// # Example
     ///
@@ -716,7 +730,7 @@ pub trait Tokens: Iterator + Sized {
     }
 
     /// Attempt to parse some output from the tokens. If the function returns `None`,
-    /// don't consume any input. Else, return whatever the function produced.
+    /// no tokens will be consumed. Else, return whatever the function produced.
     ///
     /// # Example
     ///
