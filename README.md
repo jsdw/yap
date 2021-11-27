@@ -4,18 +4,32 @@
 
 This crate helps you to parse input strings and slices by building on the `Iterator` interface.
 
-The aim of this crate is to provide transparent, flexible and easy to understand parsing utilities 
-which work on arbitrary slices and strings. Some goals of this library are:
+The aim of this crate is to provide the sorts of functions you'd come to expect from a parser
+combinator library, but without immersing you into a world of parser combinators, and forcing you
+to use a novel return type, library-provided errors or parser-combinator based control flow. It hopes
+to sacrifice conciseness in exchange for simplicity.
 
-- Be simple but flexible. The entire interface is visible on the `Tokens` trait, and everything used
-  internally to implement those functions can be used by you, too.
-- Do the obvious thing where possible. For this library, that generally means using backtracking
-  functions which won't consume any input unless they successfully parse it.
-- Make it possible to return custom error and location information anywhere you might need it.
-- Work with standard language features by offering an iterator based interface, rather than requiring
-  specific combinators for control flow and such.
+Some specific features/goals:
+- Lots of examples. Every function provided comes with example usage.
+- Prioritise simplicity at the cost of verbosity.
+- Be iterator-centric. Where applicable, combinators return iterators, so you can lean on the `Iterator`
+  interface to parse as much or as little as you want from the input, and collect up the output however 
+  you wish.
+- Allow user defined errors to be returned anywhere that it might make sense. Some functions have `_err`
+  variants incase you need error information when they don't otherwise hand back errors for simplicity.
+- Location information should always be available, so that you can tell users where something went wrong.
+  see `Tokens::offset`
+- Backtracking by default. Coming from Haskells Parsec, this feels like the sensible default. It means that
+  if one of the provided parsing functions fails to parse what you asked for, it won't consume any input 
+  trying.
+- Expose all of the "low level" functions. You can save and rewind to locations as needed (see `Token::location`), 
+  and implement ant of the provided functions using these primitives.
+- Aims to be "fairly quick". Avoids allocations (and allows you to do the same via the iterator-centric interface).
+  If you need "as fast as you can get", there are probably quicker alternatives.
 
-Have a look at the `Tokens` trait for all of the parsing methods, and examples for each.
+Have a look at the `Tokens` trait for all of the parsing methods made available, and examples for each.
+
+Have a look in the `examples` folder for more in depth examples.
 
 # Example
 
