@@ -80,10 +80,15 @@ jobs:
         uses: actions-rs/cargo@v1.0.3
         with:
           command: build
-          args: --workspace
 
       - name: Cargo test
         uses: actions-rs/cargo@v1.0.3
         with:
           command: test
+
+      - name: Cargo clippy
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: clippy
+          args: --all-targets -- -D warnings
 
