@@ -5,9 +5,9 @@ use logos::Logos;
 /// An example JSON parser. We don't handle every case (ie proper float
 /// parsing and proper escape and unicode sequences in strings), but this
 /// should at least provide an example of how to use `yap`.
-/// 
-/// Unlike `json.rs`, this example uses the excellent `logos` crate for 
-/// tokenizing and then `yap` to parse the tokens into something more 
+///
+/// Unlike `json.rs`, this example uses the excellent `logos` crate for
+/// tokenizing and then `yap` to parse the tokens into something more
 /// meaningful. Here, `yap` is working with `JsonToken`'s instead of chars.
 fn main() {
     assert_eq!(parse("true"), Ok(Value::Bool(true)));
@@ -57,7 +57,7 @@ enum JsonToken {
 
     #[token("true")]
     True,
- 
+
     #[token("false")]
     False,
 
@@ -109,10 +109,7 @@ impl JsonToken {
         }
     }
     fn is_comma(&self) -> bool {
-        match self {
-            JsonToken::Comma => true,
-            _ => false
-        }
+        matches!(self, JsonToken::Comma)
     }
 }
 
@@ -142,13 +139,13 @@ fn value<'a>(toks: &mut impl Tokens<Item=&'a JsonToken>) -> Result<Value, Error>
     // parser. Return the result otherwise.
     fn maybe(res: Result<Value,Error>) -> Option<Result<Value,Error>> {
         match res {
-            Err(Error::InvalidJson) | 
+            Err(Error::InvalidJson) |
             Err(Error::Array(ArrayError::ExpectedOpenSquareBracket)) |
             Err(Error::Object(ObjectError::ExpectedOpenCurlyBrace)) => None,
             res => Some(res)
         }
     }
-    
+
     // Return the first thing we parse successfully from our token stream.
     let value = yap::one_of!(ts from toks;
         maybe(array(ts).map(Value::Array).map_err(Error::Array)),

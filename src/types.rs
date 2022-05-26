@@ -1,8 +1,8 @@
 //! This module contains types which implement the [`Tokens`] interface. You
 //! won't often need to import this module unless you wish to explicitly name
-//! the types in question. 
+//! the types in question.
 //!
-//! In most cases, you can remain generic by using `t: impl Tokens<char>` over 
+//! In most cases, you can remain generic by using `t: impl Tokens<char>` over
 //! `t: StrTokens<'a>` as an argument to a function.
 use super::{ IntoTokens, Tokens, TokenLocation };
 
@@ -72,7 +72,7 @@ impl <'a, Item> IntoTokens<&'a Item> for SliceTokens<'a, Item> {
 
 impl <'a, Item> IntoTokens<&'a Item> for &'a [Item] {
     type Tokens = SliceTokens<'a, Item>;
-    fn into_tokens(self: Self) -> Self::Tokens {
+    fn into_tokens(self) -> Self::Tokens {
         SliceTokens {
             slice: self,
             cursor: 0,
@@ -163,7 +163,7 @@ impl <'a> IntoTokens<char> for StrTokens<'a> {
 
 impl <'a> IntoTokens<char> for &'a str {
     type Tokens = StrTokens<'a>;
-    fn into_tokens(self: Self) -> Self::Tokens {
+    fn into_tokens(self) -> Self::Tokens {
         StrTokens {
             str: self,
             cursor: 0,
@@ -196,27 +196,27 @@ macro_rules! with_context_impls {
             pub(crate) fn new(tokens: T, context: C) -> Self {
                 Self { tokens, context }
             }
-        
+
             /// Return the original tokens and context
             pub fn into_parts(self) -> (T, C) {
                 (self.tokens, self.context)
             }
-        
+
             /// Access the context
             pub fn context(&self) -> &C {
                 &self.context
             }
-        
+
             /// Mutably access the context
             pub fn context_mut(&mut self) -> &mut C {
                 &mut self.context
             }
         }
-        
-        impl <T, C> Tokens for $name<$( $($mut)+ )? T, C> 
+
+        impl <T, C> Tokens for $name<$( $($mut)+ )? T, C>
         where T: Tokens {
             type Location = T::Location;
-        
+
             fn location(&self) -> Self::Location {
                 self.tokens.location()
             }
@@ -227,8 +227,8 @@ macro_rules! with_context_impls {
                 self.tokens.is_at_location(location)
             }
         }
-        
-        impl <T, C> Iterator for $name<$( $($mut)+ )? T, C> 
+
+        impl <T, C> Iterator for $name<$( $($mut)+ )? T, C>
         where T: Iterator {
             type Item = T::Item;
             fn next(&mut self) -> Option<Self::Item> {

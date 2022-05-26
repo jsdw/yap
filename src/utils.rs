@@ -2,7 +2,7 @@
 /// Return the first not-`None` result.
 ///
 /// # Examples
-/// 
+///
 /// A basic example:
 ///
 /// ```
@@ -22,11 +22,11 @@
 /// assert_eq!(res, Some(3));
 /// assert_eq!(tokens.remaining(), " world");
 /// ```
-/// 
+///
 /// You can declare an alias from some expression that's passed in, too.
-/// Handy for abbreviating, or in this case, adding the required mut 
+/// Handy for abbreviating, or in this case, adding the required mut
 /// reference:
-/// 
+///
 /// ```
 /// use yap::{ Tokens, IntoTokens };
 ///
@@ -42,7 +42,7 @@
 /// assert_eq!(res, Some(3));
 /// assert_eq!(tokens.remaining(), " world");
 /// ```
-/// 
+///
 /// If an expression returns `None`, no tokens will be consumed:
 ///
 /// ```
@@ -61,6 +61,7 @@
 #[macro_export]
 macro_rules! one_of {
     ($tokens:ident; $( $e:expr ),+ $(,)?) => {{
+        #[allow(clippy::all)]
         loop {
             $(
                 let checkpoint = $tokens.location();
@@ -76,6 +77,7 @@ macro_rules! one_of {
         }
     }};
     ($alias:ident from $tokens:expr; $( $e:expr ),+ $(,)?) => {{
+        #[allow(clippy::all)]
         loop {
             $(
                 let checkpoint = $tokens.location();
@@ -90,4 +92,27 @@ macro_rules! one_of {
             break None;
         }
     }};
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{ IntoTokens, Tokens };
+
+    #[test]
+    fn should_produce_no_clippy_warnings() {
+        let mut ts = "abc".into_tokens();
+
+        fn produces_result(ts: &mut impl Tokens<Item=char>) -> Result<char, ()> {
+            if ts.token('a') {
+                Ok('a')
+            } else {
+                Err(())
+            }
+        }
+
+        one_of!(ts from &mut ts;
+            produces_result(ts).ok(),
+        );
+    }
+
 }
