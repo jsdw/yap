@@ -131,6 +131,8 @@ impl <'a> Iterator for StrTokens<'a> {
 
         // We have to go to &str and then char. Unchecked because we know
         // that we are on a valid boundary. There's probably a quicker way..
+        // To check that bounds detection works even on exotic characters, there's a test included
+        // at the end of the file.
         let next_char = unsafe {
             self.str.get_unchecked(self.cursor..next_char_boundary)
         }.chars().next().unwrap();
@@ -241,3 +243,16 @@ macro_rules! with_context_impls {
 with_context_impls!(WithContext);
 with_context_impls!(WithContextMut &mut);
 
+#[cfg(test)]
+mod tests {
+    use crate::IntoTokens;
+
+    #[test]
+    fn exotic_character_bounds() {
+        let mut tokens = "🗻∈🌏".into_tokens();
+
+        assert_eq!(tokens.next(), Some('🗻'));
+        assert_eq!(tokens.next(), Some('∈'));
+        assert_eq!(tokens.next(), Some('🌏'));
+    }
+}
