@@ -729,8 +729,8 @@ pub trait Tokens: Iterator + Sized {
         res
     }
 
-    /// Attempt to parse some output from the tokens. If the function returns `None`,
-    /// no tokens will be consumed. Else, return whatever the function produced.
+    /// Attempt to parse some output from the tokens, returning an `Option`. 
+    /// If the `Option` returned is `None`, no tokens will be consumed.
     ///
     /// # Example
     ///
@@ -775,6 +775,56 @@ pub trait Tokens: Iterator + Sized {
         }
     }
 
+    /// Attempt to parse some output from the tokens, returning a `Result`. 
+    /// If the `Result` returned is `Err`, no tokens will be consumed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "foobar".into_tokens();
+    ///
+    /// let res = s.optional_err(|s| {
+    ///     let a = s.next();
+    ///     let b = s.next();
+    ///     if a == b {
+    ///         Ok("yay")
+    ///     } else {
+    ///         Err("a and b don't match!")
+    ///     }
+    /// });
+    ///
+    /// // nothing consumed since Err returned from fn
+    /// assert_eq!(s.remaining(), "foobar");
+    /// assert!(res.is_err());
+    ///
+    /// let res = s.optional_err(|s| {
+    ///     let a = s.next();
+    ///     let b = s.next();
+    ///     if a != b {
+    ///         Ok((a, b))
+    ///     } else {
+    ///         Err("a and b match!")
+    ///     }
+    /// });
+    ///
+    /// // 2 chars consumed since Ok returned from fn
+    /// assert_eq!(s.remaining(), "obar");
+    /// assert_eq!(res, Ok((Some('f'), Some('o'))));
+    /// ```
+    fn optional_err<F, Output, Error>(&mut self, mut f: F) -> Result<Output, Error>
+    where F: FnMut(&mut Self) -> Result<Output, Error> {
+        let location = self.location();
+        match f(self) {
+            Ok(output) => Ok(output),
+            Err(err) => {
+                self.set_location(location);
+                Err(err)
+            }
+        }
+    }
+
     /// Run a parser against some tokens, and don't care whether it succeeded
     /// or how much input it consumed.
     ///
@@ -804,7 +854,6 @@ pub trait Tokens: Iterator + Sized {
             Some(())
         });
     }
-
 }
 
 /// Calling [`Tokens::location()`] returns an object that implements this trait.
