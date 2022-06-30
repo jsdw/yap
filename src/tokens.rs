@@ -729,8 +729,8 @@ pub trait Tokens: Iterator + Sized {
         res
     }
 
-    /// Attempt to parse some output from the tokens. If the function returns `None`,
-    /// no tokens will be consumed. Else, return whatever the function produced.
+    /// Attempt to parse some output from the tokens, returning an `Option`. 
+    /// If the `Option` returned is `None`, no tokens will be consumed.
     ///
     /// # Example
     ///
@@ -775,9 +775,8 @@ pub trait Tokens: Iterator + Sized {
         }
     }
 
-    /// Attempt to parse some output from the tokens. Whatever the passed in function
-    /// returns, will be returned by `optional_err` as well. If the function returns
-    /// `Err`, no tokens will be consumed.
+    /// Attempt to parse some output from the tokens, returning a `Result`. 
+    /// If the `Result` returned is `Err`, no tokens will be consumed.
     ///
     /// # Example
     ///
@@ -796,7 +795,7 @@ pub trait Tokens: Iterator + Sized {
     ///     }
     /// });
     ///
-    /// // nothing consumed since None returned from fn
+    /// // nothing consumed since Err returned from fn
     /// assert_eq!(s.remaining(), "foobar");
     /// assert!(res.is_err());
     ///
@@ -810,7 +809,7 @@ pub trait Tokens: Iterator + Sized {
     ///     }
     /// });
     ///
-    /// // 2 chars consumed since Some returned from fn
+    /// // 2 chars consumed since Ok returned from fn
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Ok((Some('f'), Some('o'))));
     /// ```
