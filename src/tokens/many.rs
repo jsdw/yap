@@ -4,22 +4,19 @@ use crate::Tokens;
 #[derive(Debug)]
 pub struct Many<'a, T, F> {
     tokens: &'a mut T,
-    parser: F
+    parser: F,
 }
 
-impl <'a, T, F> Many<'a, T, F> {
+impl<'a, T, F> Many<'a, T, F> {
     pub(crate) fn new(tokens: &'a mut T, parser: F) -> Self {
-        Self {
-            tokens,
-            parser
-        }
+        Self { tokens, parser }
     }
 }
 
-impl <'a, T, F, Output> Iterator for Many<'a, T, F> 
-where 
+impl<'a, T, F, Output> Iterator for Many<'a, T, F>
+where
     T: Tokens,
-    F: FnMut(&mut T) -> Option<Output>
+    F: FnMut(&mut T) -> Option<Output>,
 {
     type Item = Output;
 

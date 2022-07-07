@@ -7,26 +7,26 @@ pub struct SepByErr<'a, T, F, S> {
     parser: F,
     separator: S,
     needs_separator: bool,
-    finished: bool
+    finished: bool,
 }
 
-impl <'a, T, F, S> SepByErr<'a, T, F, S> {
+impl<'a, T, F, S> SepByErr<'a, T, F, S> {
     pub(crate) fn new(tokens: &'a mut T, parser: F, separator: S) -> Self {
         Self {
             tokens,
             parser,
             separator,
             needs_separator: false,
-            finished: false
+            finished: false,
         }
     }
 }
 
-impl <'a, T, F, S, Output, E> Iterator for SepByErr<'a, T, F, S> 
-where 
+impl<'a, T, F, S, Output, E> Iterator for SepByErr<'a, T, F, S>
+where
     T: Tokens,
     F: FnMut(&mut T) -> Result<Output, E>,
-    S: FnMut(&mut T) -> bool
+    S: FnMut(&mut T) -> bool,
 {
     type Item = Result<Output, E>;
 
@@ -47,7 +47,7 @@ where
             Ok(output) => {
                 self.needs_separator = true;
                 Some(Ok(output))
-            },
+            }
             Err(e) => {
                 // rewind to before separator was parsed; no more items.
                 self.tokens.set_location(last_good_pos);
