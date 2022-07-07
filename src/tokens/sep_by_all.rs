@@ -7,26 +7,26 @@ pub struct SepByAll<'a, T: Tokens, F, S, Output> {
     parser: F,
     separator: S,
     next_output: Option<(Output, T::Location)>,
-    needs_separator: bool
+    needs_separator: bool,
 }
 
-impl <'a, T: Tokens, F, S, Output> SepByAll<'a, T, F, S, Output> {
+impl<'a, T: Tokens, F, S, Output> SepByAll<'a, T, F, S, Output> {
     pub(crate) fn new(tokens: &'a mut T, parser: F, separator: S) -> Self {
         Self {
             tokens,
             parser,
             separator,
             next_output: None,
-            needs_separator: false
+            needs_separator: false,
         }
     }
 }
 
-impl <'a, T, F, S, Output> Iterator for SepByAll<'a, T, F, S, Output> 
-where 
+impl<'a, T, F, S, Output> Iterator for SepByAll<'a, T, F, S, Output>
+where
     T: Tokens,
     F: FnMut(&mut T) -> Option<Output>,
-    S: FnMut(&mut T) -> Option<Output>
+    S: FnMut(&mut T) -> Option<Output>,
 {
     type Item = Output;
 
@@ -39,12 +39,12 @@ where
                 Some(output) => {
                     self.needs_separator = true;
                     Some(output)
-                },
+                }
                 None => {
                     self.tokens.set_location(last_good_pos);
                     None
                 }
-            }
+            };
         }
 
         // If we've already parsed the next output, return that,
@@ -58,9 +58,7 @@ where
         // that the separator is valid before returning it). Store the
         // next output to return next iteration, and return separator this one.
         let sep = match (self.separator)(self.tokens) {
-            Some(sep) => {
-                sep
-            },
+            Some(sep) => sep,
             None => {
                 self.tokens.set_location(last_good_pos);
                 return None;
@@ -70,7 +68,7 @@ where
             Some(output) => {
                 let loc = self.tokens.location();
                 self.next_output = Some((output, loc));
-            },
+            }
             None => {
                 self.tokens.set_location(last_good_pos);
                 return None;
