@@ -81,6 +81,12 @@ jobs:
         with:
           command: build
 
+      - name: Cargo fmt
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: fmt
+          args: -- --check
+
       - name: Cargo test
         uses: actions-rs/cargo@v1.0.3
         with:
