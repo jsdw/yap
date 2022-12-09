@@ -300,12 +300,25 @@ pub trait Tokens: Iterator + Sized {
         It::Item: Borrow<Self::Item>
     {
         let location = self.location();
-        // `ts` comes first to avoid consuming an extra item from self before
-        // realising that it's time to stop..
-        for (expected, actual) in ts.into_iter().zip(self.into_iter()) {
-            if &actual != expected.borrow() {
-                self.set_location(location);
-                return false;
+
+        // We don't `.zip()` here because we need to spot and handle the
+        // case where we run out of self tokens before `ts` runs out, and reset
+        // /return false in that situation.
+        let mut ts_iter = ts.into_iter();
+        while let Some(expected) = ts_iter.next() {
+            match self.next() {
+                Some(actual) => {
+                    // We have a token; does it equal the expected one?
+                    if &actual != expected.borrow() {
+                        self.set_location(location);
+                        return false;
+                    }
+                },
+                None => {
+                    // We ran out of tokens in self, so no match.
+                    self.set_location(location);
+                    return false;
+                }
             }
         }
         true
@@ -729,7 +742,7 @@ pub trait Tokens: Iterator + Sized {
         res
     }
 
-    /// Attempt to parse some output from the tokens, returning an `Option`. 
+    /// Attempt to parse some output from the tokens, returning an `Option`.
     /// If the `Option` returned is `None`, no tokens will be consumed.
     ///
     /// # Example
@@ -775,7 +788,7 @@ pub trait Tokens: Iterator + Sized {
         }
     }
 
-    /// Attempt to parse some output from the tokens, returning a `Result`. 
+    /// Attempt to parse some output from the tokens, returning a `Result`.
     /// If the `Result` returned is `Err`, no tokens will be consumed.
     ///
     /// # Example
@@ -928,6 +941,12 @@ mod test {
         NotEnoughTokens,
         IsNotA,
         IsNotB
+    }
+
+    #[test]
+    fn test_tokens_fails_if_eof() {
+        let mut t = "hi".into_tokens();
+        assert_eq!(t.tokens("hip".chars()), false);
     }
 
     #[test]
