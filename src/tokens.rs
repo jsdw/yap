@@ -5,31 +5,30 @@
 //! implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
 mod many;
 mod many_err;
-mod tokens_while;
 mod sep_by;
-mod sep_by_err;
 mod sep_by_all;
 mod sep_by_all_err;
+mod sep_by_err;
 mod slice;
+mod tokens_while;
 
 use std::borrow::Borrow;
 
 // Re-export the structs handed back from  token fns:
-pub use tokens_while::TokensWhile;
 pub use many::Many;
 pub use many_err::ManyErr;
 pub use sep_by::SepBy;
-pub use sep_by_err::SepByErr;
 pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
+pub use sep_by_err::SepByErr;
 pub use slice::Slice;
+pub use tokens_while::TokensWhile;
 
-use crate::types::{ WithContext, WithContextMut };
+use crate::types::{WithContext, WithContextMut};
 
 /// The tokens trait builds on the [`Iterator`] trait, and adds a bunch of useful methods
 /// for parsing tokens from the underlying iterable type.
 pub trait Tokens: Iterator + Sized {
-
     /// An object which can be used to reset the token stream
     /// to some position.
     type Location: TokenLocation + PartialEq + std::fmt::Debug + Clone;
@@ -264,7 +263,7 @@ pub trait Tokens: Iterator + Sized {
     fn token<I>(&mut self, t: I) -> bool
     where
         Self::Item: PartialEq,
-        I: Borrow<Self::Item>
+        I: Borrow<Self::Item>,
     {
         let location = self.location();
         match self.next() {
@@ -297,7 +296,7 @@ pub trait Tokens: Iterator + Sized {
     where
         Self::Item: PartialEq,
         It: IntoIterator,
-        It::Item: Borrow<Self::Item>
+        It::Item: Borrow<Self::Item>,
     {
         let location = self.location();
 
@@ -344,14 +343,12 @@ pub trait Tokens: Iterator + Sized {
     where
         Self::Item: PartialEq,
         It: IntoIterator,
-        It::Item: Borrow<Self::Item>
+        It::Item: Borrow<Self::Item>,
     {
         for expected in ts.into_iter() {
             let location = self.location();
             match self.next() {
-                Some(token) if &token == expected.borrow() => {
-                    return Some(token)
-                },
+                Some(token) if &token == expected.borrow() => return Some(token),
                 _ => {
                     self.set_location(location);
                 }
@@ -374,7 +371,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn tokens_while<F>(&'_ mut self, f: F) -> TokensWhile<'_, Self, F>
     where
-        F: FnMut(&Self::Item) -> bool
+        F: FnMut(&Self::Item) -> bool,
     {
         TokensWhile::new(self, f)
     }
@@ -395,7 +392,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn skip_tokens_while<F>(&mut self, f: F) -> usize
     where
-        F: FnMut(&Self::Item) -> bool
+        F: FnMut(&Self::Item) -> bool,
     {
         self.tokens_while(f).count()
     }
@@ -423,7 +420,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn many<F, Output>(&mut self, parser: F) -> Many<Self, F>
     where
-        F: FnMut(&mut Self) -> Option<Output>
+        F: FnMut(&mut Self) -> Option<Output>,
     {
         Many::new(self, parser)
     }
@@ -460,7 +457,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn many_err<F, Output, E>(&'_ mut self, parser: F) -> ManyErr<'_, Self, F>
     where
-        F: FnMut(&mut Self) -> Result<Output, E>
+        F: FnMut(&mut Self) -> Result<Output, E>,
     {
         ManyErr::new(self, parser)
     }
@@ -491,7 +488,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn skip_many<F>(&mut self, mut parser: F) -> usize
     where
-        F: FnMut(&mut Self) -> bool
+        F: FnMut(&mut Self) -> bool,
     {
         self.many(|t| parser(t).then(|| ())).count()
     }
@@ -530,7 +527,7 @@ pub trait Tokens: Iterator + Sized {
     /// ```
     fn skip_many1<F, E, Ignored>(&mut self, parser: F) -> Result<usize, E>
     where
-        F: FnMut(&mut Self) -> Result<Ignored, E>
+        F: FnMut(&mut Self) -> Result<Ignored, E>,
     {
         let mut iter = self.many_err(parser);
         // Return error if immediate fail:
@@ -566,7 +563,7 @@ pub trait Tokens: Iterator + Sized {
     fn sep_by<F, S, Output>(&'_ mut self, parser: F, separator: S) -> SepBy<'_, Self, F, S>
     where
         F: FnMut(&mut Self) -> Option<Output>,
-        S: FnMut(&mut Self) -> bool
+        S: FnMut(&mut Self) -> bool,
     {
         SepBy::new(self, parser, separator)
     }
@@ -597,10 +594,14 @@ pub trait Tokens: Iterator + Sized {
     /// assert_eq!(digits_iter.next(), None);
     /// assert_eq!(s.remaining(), ",a,1,2,3");
     /// ```
-    fn sep_by_err<F, S, E, Output>(&'_ mut self, parser: F, separator: S) -> SepByErr<'_, Self, F, S>
+    fn sep_by_err<F, S, E, Output>(
+        &'_ mut self,
+        parser: F,
+        separator: S,
+    ) -> SepByErr<'_, Self, F, S>
     where
         F: FnMut(&mut Self) -> Result<Output, E>,
-        S: FnMut(&mut Self) -> bool
+        S: FnMut(&mut Self) -> bool,
     {
         SepByErr::new(self, parser, separator)
     }
@@ -651,10 +652,14 @@ pub trait Tokens: Iterator + Sized {
     /// ]);
     /// assert_eq!(s.remaining(), "+abc");
     /// ```
-    fn sep_by_all<F, S, Output>(&'_ mut self, parser: F, separator: S) -> SepByAll<'_, Self, F, S, Output>
+    fn sep_by_all<F, S, Output>(
+        &'_ mut self,
+        parser: F,
+        separator: S,
+    ) -> SepByAll<'_, Self, F, S, Output>
     where
         F: FnMut(&mut Self) -> Option<Output>,
-        S: FnMut(&mut Self) -> Option<Output>
+        S: FnMut(&mut Self) -> Option<Output>,
     {
         SepByAll::new(self, parser, separator)
     }
@@ -706,10 +711,14 @@ pub trait Tokens: Iterator + Sized {
     /// ]);
     /// assert_eq!(s.remaining(), "+abc");
     /// ```
-    fn sep_by_all_err<F, S, Output, E>(&'_ mut self, parser: F, separator: S) -> SepByAllErr<'_, Self, F, S, Output>
+    fn sep_by_all_err<F, S, Output, E>(
+        &'_ mut self,
+        parser: F,
+        separator: S,
+    ) -> SepByAllErr<'_, Self, F, S, Output>
     where
         F: FnMut(&mut Self) -> Result<Output, E>,
-        S: FnMut(&mut Self) -> Option<Output>
+        S: FnMut(&mut Self) -> Option<Output>,
     {
         SepByAllErr::new(self, parser, separator)
     }
@@ -734,7 +743,7 @@ pub trait Tokens: Iterator + Sized {
     fn surrounded_by<F, S, Output>(&mut self, mut parser: F, mut surrounding: S) -> Output
     where
         F: FnMut(&mut Self) -> Output,
-        S: FnMut(&mut Self)
+        S: FnMut(&mut Self),
     {
         self.skip_optional(&mut surrounding);
         let res = parser(self);
@@ -777,7 +786,9 @@ pub trait Tokens: Iterator + Sized {
     /// assert_eq!(res, Some(('f', 'o')));
     /// ```
     fn optional<F, Output>(&mut self, mut f: F) -> Option<Output>
-    where F: FnMut(&mut Self) -> Option<Output> {
+    where
+        F: FnMut(&mut Self) -> Option<Output>,
+    {
         let location = self.location();
         match f(self) {
             Some(output) => Some(output),
@@ -827,7 +838,9 @@ pub trait Tokens: Iterator + Sized {
     /// assert_eq!(res, Ok((Some('f'), Some('o'))));
     /// ```
     fn optional_err<F, Output, Error>(&mut self, mut f: F) -> Result<Output, Error>
-    where F: FnMut(&mut Self) -> Result<Output, Error> {
+    where
+        F: FnMut(&mut Self) -> Result<Output, Error>,
+    {
         let location = self.location();
         match f(self) {
             Ok(output) => Ok(output),
@@ -861,7 +874,9 @@ pub trait Tokens: Iterator + Sized {
     /// // assert_eq!(&*world, "world");
     /// ```
     fn skip_optional<F>(&mut self, mut f: F)
-    where F: FnMut(&mut Self) {
+    where
+        F: FnMut(&mut Self),
+    {
         self.optional(|t| {
             f(t);
             Some(())
@@ -893,10 +908,9 @@ pub trait TokenLocation {
 /// A trait that is implemented by anything which can be converted into an
 /// object implementing the [`Tokens`] trait.
 pub trait IntoTokens<Item> {
-    type Tokens: Tokens<Item=Item>;
+    type Tokens: Tokens<Item = Item>;
     fn into_tokens(self) -> Self::Tokens;
 }
-
 
 #[cfg(test)]
 mod test {
@@ -909,7 +923,7 @@ mod test {
     // A simple parser that looks for "ab" in an input token stream.
     // Notably, it doesn't try to rewind on failure. We expect the `many`
     // combinators to take care of that sort of thing for us as needed.
-    fn parse_ab(t: &mut impl Tokens<Item=char>) -> Option<AB> {
+    fn parse_ab(t: &mut impl Tokens<Item = char>) -> Option<AB> {
         // match any sequence "ab".
         let a = t.next()?;
         let b = t.next()?;
@@ -922,7 +936,7 @@ mod test {
 
     // Similar to the above, except it reports a more specific reason for
     // failure.
-    fn parse_ab_err(t: &mut impl Tokens<Item=char>) -> Result<AB, ABErr> {
+    fn parse_ab_err(t: &mut impl Tokens<Item = char>) -> Result<AB, ABErr> {
         // match any sequence "ab".
         let a = t.next().ok_or(ABErr::NotEnoughTokens)?;
         let b = t.next().ok_or(ABErr::NotEnoughTokens)?;
@@ -940,7 +954,7 @@ mod test {
     enum ABErr {
         NotEnoughTokens,
         IsNotA,
-        IsNotB
+        IsNotB,
     }
 
     #[test]
@@ -1025,7 +1039,10 @@ mod test {
         let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
         let rest: Vec<char> = t.collect();
 
-        assert_eq!(abs, vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::NotEnoughTokens)]);
+        assert_eq!(
+            abs,
+            vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::NotEnoughTokens)]
+        );
         assert_eq!(rest, vec!['a']);
     }
 
@@ -1076,5 +1093,4 @@ mod test {
         assert_eq!(res, Ok(2));
         assert_eq!(&*rest, "cbab");
     }
-
 }

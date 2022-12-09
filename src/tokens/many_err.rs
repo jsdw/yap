@@ -5,23 +5,23 @@ use crate::Tokens;
 pub struct ManyErr<'a, T, F> {
     tokens: &'a mut T,
     parser: F,
-    finished: bool
+    finished: bool,
 }
 
-impl <'a, T, F> ManyErr<'a, T, F> {
+impl<'a, T, F> ManyErr<'a, T, F> {
     pub(crate) fn new(tokens: &'a mut T, parser: F) -> Self {
         Self {
             tokens,
             parser,
-            finished: false
+            finished: false,
         }
     }
 }
 
-impl <'a, T, F, E, Output> Iterator for ManyErr<'a, T, F> 
-where 
+impl<'a, T, F, E, Output> Iterator for ManyErr<'a, T, F>
+where
     T: Tokens,
-    F: FnMut(&mut T) -> Result<Output, E>
+    F: FnMut(&mut T) -> Result<Output, E>,
 {
     type Item = Result<Output, E>;
 

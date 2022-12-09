@@ -96,13 +96,13 @@ macro_rules! one_of {
 
 #[cfg(test)]
 mod test {
-    use crate::{ IntoTokens, Tokens };
+    use crate::{IntoTokens, Tokens};
 
     #[test]
     fn should_produce_no_clippy_warnings() {
         let mut ts = "abc".into_tokens();
 
-        fn produces_result(ts: &mut impl Tokens<Item=char>) -> Result<char, ()> {
+        fn produces_result(ts: &mut impl Tokens<Item = char>) -> Result<char, ()> {
             if ts.token('a') {
                 Ok('a')
             } else {
@@ -114,5 +114,4 @@ mod test {
             produces_result(ts).ok(),
         );
     }
-
 }

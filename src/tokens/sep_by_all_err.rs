@@ -8,10 +8,10 @@ pub struct SepByAllErr<'a, T: Tokens, F, S, Output> {
     separator: S,
     next_output: Option<(Output, T::Location)>,
     needs_separator: bool,
-    finished: bool
+    finished: bool,
 }
 
-impl <'a, T: Tokens, F, S, Output> SepByAllErr<'a, T, F, S, Output> {
+impl<'a, T: Tokens, F, S, Output> SepByAllErr<'a, T, F, S, Output> {
     pub(crate) fn new(tokens: &'a mut T, parser: F, separator: S) -> Self {
         Self {
             tokens,
@@ -19,16 +19,16 @@ impl <'a, T: Tokens, F, S, Output> SepByAllErr<'a, T, F, S, Output> {
             separator,
             next_output: None,
             needs_separator: false,
-            finished: false
+            finished: false,
         }
     }
 }
 
-impl <'a, T, F, S, Output, E> Iterator for SepByAllErr<'a, T, F, S, Output> 
-where 
+impl<'a, T, F, S, Output, E> Iterator for SepByAllErr<'a, T, F, S, Output>
+where
     T: Tokens,
     F: FnMut(&mut T) -> Result<Output, E>,
-    S: FnMut(&mut T) -> Option<Output>
+    S: FnMut(&mut T) -> Option<Output>,
 {
     type Item = Result<Output, E>;
 
@@ -45,13 +45,13 @@ where
                 Ok(output) => {
                     self.needs_separator = true;
                     Some(Ok(output))
-                },
+                }
                 Err(e) => {
                     self.tokens.set_location(last_good_pos);
                     self.finished = true;
                     Some(Err(e))
                 }
-            }
+            };
         }
 
         // If we've already parsed the next output, return that,
@@ -65,9 +65,7 @@ where
         // that the separator is valid before returning it). Store the
         // next output to return next iteration, and return separator this one.
         let sep = match (self.separator)(self.tokens) {
-            Some(sep) => {
-                sep
-            },
+            Some(sep) => sep,
             None => {
                 self.tokens.set_location(last_good_pos);
                 self.finished = true;
@@ -78,7 +76,7 @@ where
             Ok(output) => {
                 let loc = self.tokens.location();
                 self.next_output = Some((output, loc));
-            },
+            }
             Err(e) => {
                 self.tokens.set_location(last_good_pos);
                 self.finished = true;

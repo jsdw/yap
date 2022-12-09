@@ -4,22 +4,19 @@ use crate::Tokens;
 #[derive(Debug)]
 pub struct TokensWhile<'a, T, F> {
     tokens: &'a mut T,
-    take_while: F
+    take_while: F,
 }
 
-impl <'a, T, F> TokensWhile<'a, T, F> {
+impl<'a, T, F> TokensWhile<'a, T, F> {
     pub(crate) fn new(tokens: &'a mut T, take_while: F) -> Self {
-        Self {
-            tokens,
-            take_while
-        }
+        Self { tokens, take_while }
     }
 }
 
-impl <'a, T, F> Iterator for TokensWhile<'a, T, F> 
-where 
+impl<'a, T, F> Iterator for TokensWhile<'a, T, F>
+where
     T: Tokens,
-    F: FnMut(&T::Item) -> bool
+    F: FnMut(&T::Item) -> bool,
 {
     type Item = T::Item;
 
