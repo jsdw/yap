@@ -1,3 +1,7 @@
+## 0.9.1
+
+- Tidy up some docs and deny missing docs on public items.
+
 ## 0.9.0
 
 - Remove the `Iterator` supertrait requirement from `Tokens`, and instead require implementing those

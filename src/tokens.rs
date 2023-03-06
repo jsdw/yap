@@ -955,7 +955,9 @@ pub trait TokenLocation {
 /// A trait that is implemented by anything which can be converted into an
 /// object implementing the [`Tokens`] trait.
 pub trait IntoTokens<Item> {
+    /// The type that will be used to implement the [`Tokens`] interface.
     type Tokens: Tokens<Item = Item>;
+    /// Convert self into a type which implements the [`Tokens`] interface.
     fn into_tokens(self) -> Self::Tokens;
 }
 

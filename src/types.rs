@@ -2,8 +2,8 @@
 //! won't often need to import this module unless you wish to explicitly name
 //! the types in question.
 //!
-//! In most cases, you can remain generic by using `t: impl Tokens<char>` over
-//! `t: StrTokens<'a>` as an argument to a function.
+//! You should be able to remain generic by using `t: &mut impl Tokens<Item=char>` as a
+//! function argument instead of naming concrete types like the ones here.
 use super::{IntoTokens, TokenLocation, Tokens};
 
 /// This is what we are given back if we call `into_tokens()` on
@@ -13,6 +13,8 @@ pub struct SliceTokens<'a, Item> {
     cursor: usize,
 }
 
+/// This implements [`TokenLocation`] and stores the location of
+/// our current cursor into some slice.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct SliceTokensLocation(usize);
 
@@ -84,6 +86,10 @@ pub struct StrTokens<'a> {
     cursor: usize,
 }
 
+/// This implements [`TokenLocation`] and stores the location of
+/// our current cursor into some string. The location is the byte index
+/// into the string and not the nth character we're up to (a character
+/// may be represented by several bytes).
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct StrTokensLocation(usize);
 

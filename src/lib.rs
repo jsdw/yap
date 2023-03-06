@@ -109,6 +109,7 @@ let remaining = tokens.remaining();
 assert_eq!(remaining, ",foobar");
 ```
 */
+#![deny(missing_docs)]
 
 mod one_of;
 mod tokens;
