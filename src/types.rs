@@ -40,18 +40,15 @@ impl<'a, Item> From<SliceTokens<'a, Item>> for &'a [Item] {
     }
 }
 
-impl<'a, Item> Iterator for SliceTokens<'a, Item> {
+impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     type Item = &'a Item;
+    type Location = SliceTokensLocation;
+
     fn next(&mut self) -> Option<Self::Item> {
         let res = self.slice.get(self.cursor);
         self.cursor += 1;
         res
     }
-}
-
-impl<'a, Item> Tokens for SliceTokens<'a, Item> {
-    type Location = SliceTokensLocation;
-
     fn location(&self) -> Self::Location {
         SliceTokensLocation(self.cursor)
     }
@@ -114,8 +111,10 @@ impl<'a> From<StrTokens<'a>> for &'a str {
     }
 }
 
-impl<'a> Iterator for StrTokens<'a> {
+impl<'a> Tokens for StrTokens<'a> {
     type Item = char;
+    type Location = StrTokensLocation;
+
     fn next(&mut self) -> Option<Self::Item> {
         if self.cursor == self.str.len() {
             return None;
@@ -141,11 +140,6 @@ impl<'a> Iterator for StrTokens<'a> {
         self.cursor = next_char_boundary;
         Some(next_char)
     }
-}
-
-impl<'a> Tokens for StrTokens<'a> {
-    type Location = StrTokensLocation;
-
     fn location(&self) -> Self::Location {
         StrTokensLocation(self.cursor)
     }
@@ -218,8 +212,12 @@ macro_rules! with_context_impls {
 
         impl <T, C> Tokens for $name<$( $($mut)+ )? T, C>
         where T: Tokens {
+            type Item = T::Item;
             type Location = T::Location;
 
+            fn next(&mut self) -> Option<Self::Item> {
+                self.tokens.next()
+            }
             fn location(&self) -> Self::Location {
                 self.tokens.location()
             }
@@ -230,14 +228,6 @@ macro_rules! with_context_impls {
                 self.tokens.is_at_location(location)
             }
         }
-
-        impl <T, C> Iterator for $name<$( $($mut)+ )? T, C>
-        where T: Iterator {
-            type Item = T::Item;
-            fn next(&mut self) -> Option<Self::Item> {
-                self.tokens.next()
-            }
-        }
     }
 }
 
@@ -246,7 +236,7 @@ with_context_impls!(WithContextMut &mut);
 
 #[cfg(test)]
 mod tests {
-    use crate::IntoTokens;
+    use crate::{IntoTokens, Tokens};
 
     #[test]
     fn exotic_character_bounds() {

@@ -1,5 +1,9 @@
-/// Pass the provided tokens into each expression, one after the other.
-/// Return the first not-`None` result.
+/// Pass the provided tokens into each expression, one after the other. Each
+/// expression is expected to return some `Option<T>`, where `T` must be the same
+/// across all expressions, and can be a simple value or a `Result` or anything else.
+/// If an expression returns `None`, no tokens are consumed and it will try the next
+/// expression. If the expression returns `Some(T)`, the macro will exit and hand that
+/// back, consuming any tokens used to obtain it.
 ///
 /// # Examples
 ///
@@ -51,13 +55,16 @@
 /// let mut tokens = "hello world".into_tokens();
 ///
 /// let res: Option<()> = yap::one_of!(ts from &mut tokens;
-///     // This explicit iteration will be rewound if None is returned:
+///     // No tokens will be consumed running this since `None` is returned:
 ///     { ts.next(); ts.next(); None },
 /// );
 ///
+/// assert_eq!(res, None);
 /// assert_eq!(tokens.remaining(), "hello world");
-/// # assert_eq!(res, None);
 /// ```
+///
+/// Expressions can return `Result`s inside the `Option` too (or anything else that they wish),
+/// allowing for parsers to propagate errors out through this macro however you prefer.
 #[macro_export]
 macro_rules! one_of {
     ($tokens:ident; $( $e:expr ),+ $(,)?) => {{

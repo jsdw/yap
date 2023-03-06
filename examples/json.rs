@@ -237,7 +237,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<f64> {
 
         // Grab our numeric digits at once and parse:
         let end_pos = toks.location();
-        let n_str: String = toks.slice(start_pos, end_pos).collect();
+        let n_str: String = toks.slice(start_pos, end_pos).as_iter().collect();
         n_str.parse().ok()
     })
 }

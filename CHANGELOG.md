@@ -1,3 +1,9 @@
+## 0.9.0
+
+- Remove the `Iterator` supertrait requirement from `Tokens`, and instead require implementing those
+  methods directly on `Tokens`. Add a `Tokens::as_iter()` method to return an Iterator from our Tokens.
+  This is done to keep the Iterator interface and methods in a separate namespace from the Tokens ones.
+
 ## 0.8.1
 
 - Fix a bug whereby `.tokens("foo")` will return true if we run out of input before completing the match.

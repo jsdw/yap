@@ -110,8 +110,8 @@ assert_eq!(remaining, ",foobar");
 ```
 */
 
+mod one_of;
 mod tokens;
-mod utils;
 
 pub mod types;
 pub use tokens::{IntoTokens, TokenLocation, Tokens};

@@ -26,8 +26,10 @@ impl<'a, T: Tokens> Slice<'a, T> {
     }
 }
 
-impl<'a, T: Tokens> Iterator for Slice<'a, T> {
+// We can also treat this slice of tokens as tokens, too:
+impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     type Item = T::Item;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Initial prep:
@@ -44,12 +46,6 @@ impl<'a, T: Tokens> Iterator for Slice<'a, T> {
             self.tokens.next()
         }
     }
-}
-
-// We can also treat this slice of tokens as tokens, too:
-impl<'a, T: Tokens> Tokens for Slice<'a, T> {
-    type Location = T::Location;
-
     fn location(&self) -> Self::Location {
         self.tokens.location()
     }
