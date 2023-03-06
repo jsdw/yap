@@ -312,7 +312,7 @@ pub trait Tokens: Iterator + Sized {
                         self.set_location(location);
                         return false;
                     }
-                },
+                }
                 None => {
                     // We ran out of tokens in self, so no match.
                     self.set_location(location);
