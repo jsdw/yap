@@ -1,13 +1,20 @@
 use std::collections::HashMap;
-use yap::{IntoTokens, Tokens};
+use yap::{IntoTokens, TokenLocation, Tokens};
 
 /// An example JSON parser. We don't handle every case (ie proper float
 /// parsing and proper escape and unicode sequences in strings), but this
 /// should at least provide an example of how to use `yap`.
 fn main() {
+    assert_eq!(parse("null"), Ok(Value::Null));
     assert_eq!(parse("true"), Ok(Value::Bool(true)));
     assert_eq!(parse("1"), Ok(Value::Number(1.0)));
     assert_eq!(parse("-2.123"), Ok(Value::Number(-2.123)));
+    assert_eq!(parse("+2.123"), Ok(Value::Number(2.123)));
+    assert_eq!(
+        parse("\"hello\\t\\nthere\""),
+        Ok(Value::String("hello\t\nthere".to_string()))
+    );
+
     assert_eq!(
         parse("[1,2,3]"),
         Ok(Value::Array(vec![
@@ -16,6 +23,7 @@ fn main() {
             Value::Number(3.0)
         ]))
     );
+
     assert_eq!(
         parse("[\"hello\", false, []]"),
         Ok(Value::Array(vec![
@@ -25,27 +33,25 @@ fn main() {
         ]))
     );
 
-    let m = {
-        let mut m = HashMap::new();
-        m.insert("hello".to_string(), Value::Number(2.0));
-        m.insert(
+    let m = HashMap::from_iter([
+        ("hello".to_string(), Value::Number(2.0)),
+        (
             "another".to_string(),
             Value::Array(vec![
                 Value::Number(1.0),
                 Value::Number(2.0),
                 Value::Number(3.0),
             ]),
-        );
-        m.insert("more".to_string(), Value::Object(HashMap::new()));
-        m
-    };
+        ),
+        ("more".to_string(), Value::Object(HashMap::new())),
+    ]);
     assert_eq!(
         parse(r#"{ "hello": 2, "another": [1,2,3], "more" : {}}"#),
         Ok(Value::Object(m))
     );
 }
 
-/// Parse JSON from a string!
+/// Parse JSON from a string. Just a very thin wrapper around `value()`.
 fn parse(s: &str) -> Result<Value, Error> {
     value(&mut s.into_tokens())
 }
@@ -53,6 +59,7 @@ fn parse(s: &str) -> Result<Value, Error> {
 /// This is what we'll parse our JSON into.
 #[derive(Clone, PartialEq, Debug)]
 enum Value {
+    Null,
     Number(f64),
     String(String),
     Bool(bool),
@@ -61,145 +68,231 @@ enum Value {
 }
 
 /// Some errors that can be emitted if things go wrong.
-#[derive(Clone, PartialEq, Debug)]
-enum Error {
-    InvalidJson,
-    Array(ArrayError),
-    String(StringError),
-    Object(ObjectError),
+/// In this example, each error has a start and end location
+/// denoting where the issue is in the string.
+#[derive(PartialEq, Debug)]
+struct Error {
+    // Start and end location of the error
+    location: (usize, usize),
+    // What was the nature of the error?
+    kind: ErrorKind,
 }
 
-/// Try parsing each of the different types of value we know about,
-/// bailing if one of those types returns a non-recoverable error, or
-/// trying the next if it errors in a recoverable way.
-fn value(toks: &mut impl Tokens<Item = char>) -> Result<Value, Error> {
-    // Return `None` if the error isn't fatal and we should try the next
-    // parser. Return the result otherwise.
-    fn maybe(res: Result<Value, Error>) -> Option<Result<Value, Error>> {
-        match res {
-            Err(Error::InvalidJson)
-            | Err(Error::Array(ArrayError::ExpectedOpenSquareBracket))
-            | Err(Error::String(StringError::ExpectedOpenDoubleQuote))
-            | Err(Error::Object(ObjectError::ExpectedOpenCurlyBrace)) => None,
-            res => Some(res),
+#[derive(PartialEq, Debug)]
+enum ErrorKind {
+    // No ']' seen while parsing array.
+    ArrayNotClosed,
+    // No '}' seen while parsing object.
+    ObjectNotClosed,
+    // Object field isn't a valid string.
+    InvalidObjectField,
+    // No ':' seen between object field and valud.
+    MissingObjectFieldSeparator,
+    // String escape char (ie char after \) isn't valid.
+    InvalidEscapeChar(char),
+    // the file ended while we were still parsing.
+    UnexpectedEof,
+    // We expect to see a digit here while parsing a number.
+    DigitExpectedNext,
+    // We didn't successfully parse any valid JSON at all.
+    InvalidJson,
+}
+
+impl ErrorKind {
+    fn at<T: TokenLocation>(self, start: T, end: T) -> Error {
+        Error {
+            location: (start.offset(), end.offset()),
+            kind: self,
         }
     }
+}
 
-    // Return the first thing we parse successfully from our token stream.
+/// This is the `yap` entry point, and is responsible for parsing JSON values.
+///
+/// Try parsing each of the different types of value we know about,
+/// and return the first error that we encounter, or a valid `Value`.
+fn value(toks: &mut impl Tokens<Item = char>) -> Result<Value, Error> {
+    // Return the first thing we parse successfully from our token stream,
+    // mapping values into their `Value` container.
     let value = yap::one_of!(ts from toks;
-        maybe(array(ts).map(Value::Array).map_err(Error::Array)),
-        maybe(string(ts).map(Value::String).map_err(Error::String)),
-        maybe(object(ts).map(Value::Object).map_err(Error::Object)),
+        array(ts).map(|res| res.map(Value::Array)),
+        string(ts).map(|res| res.map(Value::String)),
+        object(ts).map(|res| res.map(Value::Object)),
+        number(ts).map(|res| res.map(Value::Number)),
         bool(ts).map(|v| Ok(Value::Bool(v))),
-        number(ts).map(|v| Ok(Value::Number(v))),
+        null(ts).then_some(Ok(Value::Null))
     );
 
-    // No value? a bunch of recoverable errors were hit; ultimately invalid input.
+    // No value? This means that the input doesn't begin with any valid JSON
+    // character.
     match value {
         Some(r) => r,
-        None => Err(Error::InvalidJson),
+        None => Err(ErrorKind::InvalidJson.at(toks.location(), toks.location())),
     }
-}
-
-fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {
-    toks.skip_tokens_while(|c| c.is_ascii_whitespace());
-}
-
-fn field_separator(toks: &mut impl Tokens<Item = char>) -> bool {
-    toks.surrounded_by(|t| t.token(','), |t| skip_whitespace(t))
-}
-
-#[derive(Clone, PartialEq, Debug)]
-enum ArrayError {
-    ExpectedOpenSquareBracket,
-    InputFinishedButArrayNotClosed,
 }
 
 /// Arrays start and end with [ and ], and contain JSON values, which we can
 /// use our top level value parser to handle.
-fn array(toks: &mut impl Tokens<Item = char>) -> Result<Vec<Value>, ArrayError> {
-    if !toks.token('[') {
-        return Err(ArrayError::ExpectedOpenSquareBracket);
-    }
+///
+/// - `Some(Ok(values))` means we successfully parsed 0 or more array values.
+/// - `Some(Err(e))` means that we hit an error parsing the array.
+/// - `None` means that this wasn't an array and so nothing was parsed.
+fn array(toks: &mut impl Tokens<Item = char>) -> Option<Result<Vec<Value>, Error>> {
+    // Note the location of the start of the array.
+    let start = toks.location();
+
+    // Try to consume a '['. If we can't, we consume nothing and bail.
+    // This isn't strictly necessary because we consume nothing in our
+    // `value()` parser if `array()` returns None, but is here for
+    // the sake of completeness.
+    toks.optional(|ts| ts.token('[').then_some(()))?;
     skip_whitespace(&mut *toks);
 
+    // Use our `value()` parser to parse each array value, separated by ','.
     let values: Vec<Value> = toks
         .sep_by(|t| value(t).ok(), |t| field_separator(t))
         .collect();
 
     skip_whitespace(&mut *toks);
     if !toks.token(']') {
-        return Err(ArrayError::InputFinishedButArrayNotClosed);
+        // Record the start and end location of the array in our error.
+        return Some(Err(ErrorKind::ArrayNotClosed.at(start, toks.location())));
     }
-    Ok(values)
-}
 
-#[derive(Clone, PartialEq, Debug)]
-enum ObjectError {
-    ExpectedOpenCurlyBrace,
-    InputFinishedButObjectNotClosed,
+    Some(Ok(values))
 }
 
 /// Objects begin with {, and then have 0 or more "field":value pairs (for which we just
 /// lean on our string and value parsers to handle), and then should close with a }.
-fn object(toks: &mut impl Tokens<Item = char>) -> Result<HashMap<String, Value>, ObjectError> {
-    if !toks.token('{') {
-        return Err(ObjectError::ExpectedOpenCurlyBrace);
-    }
+///
+/// - `Some(Ok(values))` means we successfully parsed 0 or more object values.
+/// - `Some(Err(e))` means that we hit an error parsing the object.
+/// - `None` means that this wasn't an object and so nothing was parsed.
+fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, Value>, Error>> {
+    // Note the location of the start of the object.
+    let start = toks.location();
+
+    // As with `array()`, we consume nothing and bail with None if a '{' isn't seen,
+    // but just using `if !toks.token('{')` would have worked fine too.
+    toks.optional(|ts| ts.token('{').then_some(()))?;
     skip_whitespace(&mut *toks);
 
-    let values: HashMap<String, Value> = toks
+    // Expect object fields like `name: value` to be separated like arrays are.
+    let values: Result<HashMap<String, Value>, Error> = toks
         .sep_by(|t| object_field(t), |t| field_separator(t))
         .collect();
 
+    // If we hit any errors above, return it.
+    let Ok(values) = values else {
+        return Some(values)
+    };
+
     skip_whitespace(&mut *toks);
     if !toks.token('}') {
-        return Err(ObjectError::InputFinishedButObjectNotClosed);
+        // Record the start and end location of the object in our error.
+        return Some(Err(ErrorKind::ObjectNotClosed.at(start, toks.location())));
     }
-    Ok(values)
+
+    Some(Ok(values))
 }
 
-fn object_field(toks: &mut impl Tokens<Item = char>) -> Option<(String, Value)> {
-    let name = string(&mut *toks).ok()?;
-    skip_whitespace(&mut *toks);
-    if !toks.token(':') {
+/// Each object contains zero or more fields, which each have names and values.
+///
+/// - `Some(Ok((key, val)))` means we parsed a keyval field pair.
+/// - `Some(Err(e))` means we hit some unrecoverable error.
+/// - `None` means we parsed nothing and hit the end of the object.
+fn object_field(toks: &mut impl Tokens<Item = char>) -> Option<Result<(String, Value), Error>> {
+    if toks.peek() == Some('}') {
         return None;
     }
+    let start = toks.location();
+
+    // Any valid string is also a valid field name. If we don't find a
+    // string here, or it fails to parse, we kick up a fuss.
+    let name = match string(&mut *toks) {
+        None => return Some(Err(ErrorKind::InvalidObjectField.at(start.clone(), start))),
+        Some(Err(err)) => return Some(Err(err)),
+        Some(Ok(s)) => s,
+    };
+
     skip_whitespace(&mut *toks);
-    let val = value(&mut *toks).ok()?;
-    Some((name, val))
+    if !toks.token(':') {
+        let loc = toks.location();
+        return Some(Err(
+            ErrorKind::MissingObjectFieldSeparator.at(loc.clone(), loc)
+        ));
+    }
+    skip_whitespace(&mut *toks);
+
+    // And after the name comes some arbitrary value:
+    let val = match value(&mut *toks) {
+        Ok(val) => val,
+        Err(e) => return Some(Err(e)),
+    };
+
+    Some(Ok((name, val)))
 }
 
-#[derive(Clone, PartialEq, Debug)]
-enum StringError {
-    ExpectedOpenDoubleQuote,
-    InputFinishedButStringNotClosed,
-}
+/// Some fairly naive parsing of strings which just manually iterates over tokens
+/// to handle basic escapes and pushes them to a string.
+///
+/// - `None` if nothingconsumed and not a string
+/// - `Some(Ok(s))` if we parsed a string successfully
+/// - `Some(Err(e))` if something went wrong parsing a string.
+fn string(toks: &mut impl Tokens<Item = char>) -> Option<Result<String, Error>> {
+    // As with `array()` and `object()`, we consume nothing and bail with None
+    // if an opening '"' isn't seen.
+    toks.optional(|ts| ts.token('"').then_some(()))?;
 
-/// We ignore escape sequences and things, and just parse everything between
-/// a pair of "'s, kicking up a fuss if the string isn't closed.
-fn string(toks: &mut impl Tokens<Item = char>) -> Result<String, StringError> {
-    if !toks.token('"') {
-        return Err(StringError::ExpectedOpenDoubleQuote);
+    // manually iterate over chars and handle them as needed,
+    // adding them to our string.
+    let mut s = String::new();
+    while let Some(char) = toks.next() {
+        match char {
+            // Handle escape chars (naively; ignore \uXXX for instance):
+            '\\' => {
+                let Some(escape_char) = toks.next() else {
+                    let loc = toks.location();
+                    return Some(Err(ErrorKind::UnexpectedEof.at(loc.clone(), loc)));
+                };
+                let substitute_char = match escape_char {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '"' => '"',
+                    '\\' => '\\',
+                    // If we don't recognise the escape char, return an error:
+                    c => {
+                        let loc = toks.location();
+                        return Some(Err(ErrorKind::InvalidEscapeChar(c).at(loc.clone(), loc)));
+                    }
+                };
+                s.push(substitute_char)
+            }
+            // String closed; return it!
+            '"' => return Some(Ok(s)),
+            // Some standard char; add it to our string.
+            c => s.push(c),
+        }
     }
 
-    let s = toks.tokens_while(|&c| c != '"').collect();
-
-    if !toks.token('"') {
-        return Err(StringError::InputFinishedButStringNotClosed);
-    }
-    Ok(s)
+    // The string should have been closed above; if we get this far, it hasn't
+    // been, so return an error.
+    let loc = toks.location();
+    Some(Err(ErrorKind::UnexpectedEof.at(loc.clone(), loc)))
 }
 
 /// true or false; None if neither!
 fn bool(toks: &mut impl Tokens<Item = char>) -> Option<bool> {
-    if toks.tokens("true".chars()) {
-        Some(true)
-    } else if toks.tokens("false".chars()) {
-        Some(false)
-    } else {
-        None
-    }
+    yap::one_of!(toks;
+        toks.tokens("true".chars()).then_some(true),
+        toks.tokens("false".chars()).then_some(false)
+    )
+}
+
+// Is null seen? None if not.
+fn null(toks: &mut impl Tokens<Item = char>) -> bool {
+    toks.tokens("null".chars())
 }
 
 /// Numbers are maybe the most difficult thing to parse. Here, we store the start
@@ -208,36 +301,56 @@ fn bool(toks: &mut impl Tokens<Item = char>) -> Option<bool> {
 /// over at once and parse them into a number.
 ///
 /// A better parser could return specific errors depending on where we failed in our parsing.
-fn number(toks: &mut impl Tokens<Item = char>) -> Option<f64> {
-    // If anything fails, we consume nothing.
-    toks.optional(|toks| {
-        let start_pos = toks.location();
+fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
+    let start = toks.location();
 
-        // Maybe it starts with a minus sign.
-        toks.token('-');
+    // Look for the start of a number. return None if
+    // we're not looking at a number. Consume the token
+    // if it looks like the start of a number.
+    let is_fst_number = match toks.peek()? {
+        '-' | '+' => toks.next().map(|_| false),
+        '0'..='9' => toks.next().map(|_| true),
+        _ => None,
+    }?;
 
-        // Now, skip over digits. If none, then this isn't an number.
-        let num_digits = toks.skip_tokens_while(|c| c.is_numeric());
-        if num_digits == 0 {
+    // Now, skip over digits. If none, then this isn't an number unless
+    // the char above was a digit too.
+    let num_skipped = toks.skip_tokens_while(|c| c.is_numeric());
+    if num_skipped == 0 && !is_fst_number {
+        let loc = toks.location();
+        return Some(Err(ErrorKind::DigitExpectedNext.at(start, loc)));
+    }
+
+    // A number might have a '.1234' suffix, but if it doesn't, don't consume
+    // anything. If it does but something went wrong, we'll get Some(Err) back.
+    let suffix = toks.optional(|toks| {
+        if !toks.token('.') {
             return None;
         }
+        let num_digits = toks.tokens_while(|c| c.is_numeric()).count();
+        if num_digits == 0 {
+            let loc = toks.location();
+            Some(Err(ErrorKind::DigitExpectedNext.at(start.clone(), loc)))
+        } else {
+            Some(Ok(()))
+        }
+    });
 
-        // Next, optionally look for a '.' followed by 1 or more digits.
-        toks.optional(|toks| {
-            if !toks.token('.') {
-                return None;
-            }
-            let num_digits = toks.tokens_while(|c| c.is_numeric()).count();
-            if num_digits == 0 {
-                None
-            } else {
-                Some(())
-            }
-        });
+    // If we hit an error parsing the suffix, return it.
+    if let Some(Err(e)) = suffix {
+        return Some(Err(e));
+    }
 
-        // Grab our numeric digits at once and parse:
-        let end_pos = toks.location();
-        let n_str: String = toks.slice(start_pos, end_pos).as_iter().collect();
-        n_str.parse().ok()
-    })
+    // If we get this far, we saw a valid number. Just let Rust parse it for us..
+    let end = toks.location();
+    let n_str: String = toks.slice(start, end).as_iter().collect();
+    Some(Ok(n_str.parse().expect("valid number expected here")))
+}
+
+fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {
+    toks.skip_tokens_while(|c| c.is_ascii_whitespace());
+}
+
+fn field_separator(toks: &mut impl Tokens<Item = char>) -> bool {
+    toks.surrounded_by(|t| t.token(','), |t| skip_whitespace(t))
 }

@@ -2,17 +2,17 @@ use logos::Logos;
 use std::collections::HashMap;
 use yap::{IntoTokens, Tokens};
 
-/// An example JSON parser. We don't handle every case (ie proper float
-/// parsing and proper escape and unicode sequences in strings), but this
-/// should at least provide an example of how to use `yap`.
-///
-/// Unlike `json.rs`, this example uses the excellent `logos` crate for
-/// tokenizing and then `yap` to parse the tokens into something more
-/// meaningful. Here, `yap` is working with `JsonToken`'s instead of chars.
+/// An example JSON parser. This is a little less refined than the `json.rs`
+/// example (so I'd suggest that you start there). This example shows that
+/// `yap` can work alongside other tools and parse from slices just as easily
+/// as strings.
 fn main() {
+    assert_eq!(parse("null"), Ok(Value::Null));
     assert_eq!(parse("true"), Ok(Value::Bool(true)));
     assert_eq!(parse("1"), Ok(Value::Number(1.0)));
     assert_eq!(parse("-2.123"), Ok(Value::Number(-2.123)));
+    assert_eq!(parse("+2.123"), Ok(Value::Number(2.123)));
+
     assert_eq!(
         parse("[1,2,3]"),
         Ok(Value::Array(vec![
@@ -21,6 +21,7 @@ fn main() {
             Value::Number(3.0)
         ]))
     );
+
     assert_eq!(
         parse("[\"hello\", false, []]"),
         Ok(Value::Array(vec![
@@ -30,20 +31,18 @@ fn main() {
         ]))
     );
 
-    let m = {
-        let mut m = HashMap::new();
-        m.insert("hello".to_string(), Value::Number(2.0));
-        m.insert(
+    let m = HashMap::from_iter([
+        ("hello".to_string(), Value::Number(2.0)),
+        (
             "another".to_string(),
             Value::Array(vec![
                 Value::Number(1.0),
                 Value::Number(2.0),
                 Value::Number(3.0),
             ]),
-        );
-        m.insert("more".to_string(), Value::Object(HashMap::new()));
-        m
-    };
+        ),
+        ("more".to_string(), Value::Object(HashMap::new())),
+    ]);
     assert_eq!(
         parse(r#"{ "hello": 2, "another": [1,2,3], "more" : {}}"#),
         Ok(Value::Object(m))
@@ -64,7 +63,7 @@ fn parse(s: &str) -> Result<Value, Error> {
 /// Tokens we parse from logos:
 #[derive(Logos, Debug, PartialEq)]
 enum JsonToken {
-    #[regex(r"(-)?[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse())]
+    #[regex(r"[+-]?[0-9]+(\.[0-9]+)?", |lex| lex.slice().parse())]
     Number(f64),
 
     #[token("true")]
@@ -72,6 +71,9 @@ enum JsonToken {
 
     #[token("false")]
     False,
+
+    #[token("null")]
+    Null,
 
     #[token(",")]
     Comma,
@@ -128,6 +130,7 @@ impl JsonToken {
 /// This is what we'll parse our JSON into.
 #[derive(Clone, PartialEq, Debug)]
 enum Value {
+    Null,
     Number(f64),
     String(String),
     Bool(bool),
@@ -165,6 +168,7 @@ fn value<'a>(toks: &mut impl Tokens<Item = &'a JsonToken>) -> Result<Value, Erro
         string(ts).map(|v| Ok(Value::String(v))),
         bool(ts).map(|v| Ok(Value::Bool(v))),
         number(ts).map(|v| Ok(Value::Number(v))),
+        null(ts).then_some(Ok(Value::Null))
     );
 
     // No value? a bunch of recoverable errors were hit; ultimately invalid input.
@@ -248,4 +252,8 @@ fn bool<'a>(toks: &mut impl Tokens<Item = &'a JsonToken>) -> Option<bool> {
 
 fn number<'a>(toks: &mut impl Tokens<Item = &'a JsonToken>) -> Option<f64> {
     toks.next().and_then(|t| t.as_number())
+}
+
+fn null<'a>(toks: &mut impl Tokens<Item = &'a JsonToken>) -> bool {
+    toks.next() == Some(&JsonToken::Null)
 }
