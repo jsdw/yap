@@ -143,7 +143,7 @@ fn array(toks: &mut impl Tokens<Item = char>) -> Option<Result<Vec<Value>, Error
 
     // Try to consume a '['. If we can't, we consume nothing and bail.
     if !toks.token('[') {
-        return None
+        return None;
     }
     skip_whitespace(&mut *toks);
 
@@ -173,7 +173,7 @@ fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, 
 
     // Try to consume a '{'. If we can't, we consume nothing and bail.
     if !toks.token('{') {
-        return None
+        return None;
     }
     skip_whitespace(&mut *toks);
 
@@ -242,7 +242,7 @@ fn object_field(toks: &mut impl Tokens<Item = char>) -> Option<Result<(String, V
 fn string(toks: &mut impl Tokens<Item = char>) -> Option<Result<String, Error>> {
     // Try to consume a '"'. If we can't, we consume nothing and bail.
     if !toks.token('"') {
-        return None
+        return None;
     }
 
     // manually iterate over chars and handle them as needed,
