@@ -142,10 +142,9 @@ fn array(toks: &mut impl Tokens<Item = char>) -> Option<Result<Vec<Value>, Error
     let start = toks.location();
 
     // Try to consume a '['. If we can't, we consume nothing and bail.
-    // This isn't strictly necessary because we consume nothing in our
-    // `value()` parser if `array()` returns None, but is here for
-    // the sake of completeness.
-    toks.optional(|ts| ts.token('[').then_some(()))?;
+    if !toks.token('[') {
+        return None
+    }
     skip_whitespace(&mut *toks);
 
     // Use our `value()` parser to parse each array value, separated by ','.
@@ -172,9 +171,10 @@ fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, 
     // Note the location of the start of the object.
     let start = toks.location();
 
-    // As with `array()`, we consume nothing and bail with None if a '{' isn't seen,
-    // but just using `if !toks.token('{')` would have worked fine too.
-    toks.optional(|ts| ts.token('{').then_some(()))?;
+    // Try to consume a '{'. If we can't, we consume nothing and bail.
+    if !toks.token('{') {
+        return None
+    }
     skip_whitespace(&mut *toks);
 
     // Expect object fields like `name: value` to be separated like arrays are.
@@ -236,13 +236,14 @@ fn object_field(toks: &mut impl Tokens<Item = char>) -> Option<Result<(String, V
 /// Some fairly naive parsing of strings which just manually iterates over tokens
 /// to handle basic escapes and pushes them to a string.
 ///
-/// - `None` if nothingconsumed and not a string
+/// - `None` if nothing consumed and not a string
 /// - `Some(Ok(s))` if we parsed a string successfully
 /// - `Some(Err(e))` if something went wrong parsing a string.
 fn string(toks: &mut impl Tokens<Item = char>) -> Option<Result<String, Error>> {
-    // As with `array()` and `object()`, we consume nothing and bail with None
-    // if an opening '"' isn't seen.
-    toks.optional(|ts| ts.token('"').then_some(()))?;
+    // Try to consume a '"'. If we can't, we consume nothing and bail.
+    if !toks.token('"') {
+        return None
+    }
 
     // manually iterate over chars and handle them as needed,
     // adding them to our string.
@@ -327,7 +328,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
         if !toks.token('.') {
             return None;
         }
-        let num_digits = toks.tokens_while(|c| c.is_numeric()).count();
+        let num_digits = toks.skip_tokens_while(|c| c.is_numeric());
         if num_digits == 0 {
             let loc = toks.location();
             Some(Err(ErrorKind::DigitExpectedNext.at(start.clone(), loc)))

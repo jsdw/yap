@@ -425,6 +425,7 @@ pub trait Tokens: Sized {
 
     /// Iterate over the tokens until the provided function returns false on one. Only consume the tokens
     /// that the function returned true for, returning the number of tokens that were consumed/skipped.
+    /// Equivalent to `toks.tokens_while(f).count()`.
     ///
     /// # Example
     ///
@@ -792,9 +793,9 @@ pub trait Tokens: Sized {
         F: FnMut(&mut Self) -> Output,
         S: FnMut(&mut Self),
     {
-        self.skip_optional(&mut surrounding);
+        surrounding(self);
         let res = parser(self);
-        self.skip_optional(&mut surrounding);
+        surrounding(self);
         res
     }
 
@@ -896,38 +897,6 @@ pub trait Tokens: Sized {
                 Err(err)
             }
         }
-    }
-
-    /// Run a parser against some tokens, and don't care whether it succeeded
-    /// or how much input it consumed.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut s = "   helloworld".into_tokens();
-    ///
-    /// fn parse_whitespace(t: &mut impl Tokens<Item=char>) {
-    ///     t.skip_tokens_while(|c| c.is_ascii_whitespace());
-    /// }
-    ///
-    /// s.skip_optional(|t| parse_whitespace(t));
-    /// let is_hello = s.tokens("hello".chars());
-    /// s.skip_optional(|t| parse_whitespace(t));
-    /// let world: String = s.tokens_while(|c| c.is_ascii_alphabetic()).collect();
-    ///
-    /// // assert_eq!(is_hello, true);
-    /// // assert_eq!(&*world, "world");
-    /// ```
-    fn skip_optional<F>(&mut self, mut f: F)
-    where
-        F: FnMut(&mut Self),
-    {
-        self.optional(|t| {
-            f(t);
-            Some(())
-        });
     }
 }
 

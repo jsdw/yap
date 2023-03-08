@@ -1,3 +1,7 @@
+## 0.10.0
+
+- Remove pointless `skip_optional` function.
+
 ## 0.9.1
 
 - Tidy up some docs and deny missing docs on public items.
