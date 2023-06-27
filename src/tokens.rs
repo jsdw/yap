@@ -29,7 +29,7 @@ use crate::types::{WithContext, WithContextMut};
 /// The tokens trait is an extension of the [`Iterator`] trait, and adds a bunch of useful methods
 /// for parsing tokens from the underlying iterable type. Implementations don't need to directly
 /// implement [`Iterator`]; instead there exists a [`Tokens::as_iter()`] method to return one that
-/// is based on the methods implementated here.
+/// is based on the methods implemented here.
 pub trait Tokens: Sized {
     /// The item returned from [`Tokens::next()`].
     type Item;
@@ -146,7 +146,7 @@ pub trait Tokens: Sized {
     /// and making it better suited to attaching temporary contexts.
     ///
     /// Be aware that if you attach context in a function called recursively, the type checker may shout at you
-    /// for contructing a type like `WithContextMut<WithContextMut<WithContextMut<..>>>`. In these cases, you
+    /// for constructing a type like `WithContextMut<WithContextMut<WithContextMut<..>>>`. In these cases, you
     /// can "break the cycle" by removing the original `WithContextMut` by using
     /// [`crate::types::WithContextMut::into_parts()`] before wrapping the tokens in a new context for the recursive
     /// call.

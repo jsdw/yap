@@ -9,7 +9,7 @@ to sacrifice conciseness in exchange for simplicity.
 
 **Some specific features/goals:**
 - Lots of examples. Every function provided comes with example usage.
-- Prioritise simplicity at the cost of verbosity.
+- Prioritize simplicity at the cost of verbosity.
 - Be iterator-centric. Where applicable, combinators return iterators, so you can lean on the [`Iterator`]
   interface to parse as much or as little as you want from the input, and collect up the output however
   you wish.
