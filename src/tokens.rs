@@ -195,7 +195,7 @@ pub trait Tokens: Sized {
     ///
     /// **Note:** the slice returned from this prevents the original tokens from being used until
     /// it's dropped, and resets the original tokens to their current location on `Drop`. if you
-    /// [`std::mem::forget`] it, the original token location will equal whatever the slice location
+    /// [`core::mem::forget`] it, the original token location will equal whatever the slice location
     /// was when it was forgotten.
     ///
     /// # Example
