@@ -174,6 +174,77 @@ impl<'a> IntoTokens<char> for &'a str {
     }
 }
 
+/// This is what we are given back if we call [`IteratorTokens::into_tokens(iter)`] on
+/// an `impl Iterator + Clone`. It implements the [`Tokens`] interface.
+///
+/// [`IteratorTokens::into_tokens(iter)`]: struct.IteratorTokens.html#method.into_tokens
+#[derive(Clone, Debug)]
+pub struct IteratorTokens<I> {
+    iter: I,
+    cursor: usize,
+}
+
+/// This implements [`TokenLocation`] and stores the location and state of
+/// our current cursor into some iterator. The location is equivalent to `offset` in [`Iterator::nth(offset)`].
+#[derive(Clone, Debug)]
+pub struct IteratorTokensLocation<I> {
+    state: IteratorTokens<I>,
+    cursor: usize,
+}
+
+impl<I> TokenLocation for IteratorTokensLocation<I> {
+    fn offset(&self) -> usize {
+        self.cursor
+    }
+}
+
+impl<I> IteratorTokens<I> {
+    /// Can't define a blanket impl for [`IntoTokens`] on all `impl Iterator + Clone` without [specialization](https://rust-lang.github.io/rfcs/1210-impl-specialization.html).
+    /// Instead use this and/or manually define [`IntoTokens`] for your specific iterator.
+    pub fn into_tokens(iter: I) -> Self {
+        IteratorTokens { iter, cursor: 0 }
+    }
+}
+
+impl<I> Tokens for IteratorTokens<I>
+where
+    I: Iterator + Clone,
+{
+    type Item = I::Item;
+
+    type Location = IteratorTokensLocation<I>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cursor += 1;
+        self.iter.next()
+    }
+
+    fn location(&self) -> Self::Location {
+        IteratorTokensLocation {
+            state: self.clone(),
+            cursor: self.cursor,
+        }
+    }
+
+    fn set_location(&mut self, location: Self::Location) {
+        *self = location.state;
+    }
+
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.cursor == location.cursor
+    }
+}
+
+impl<I> IntoTokens<I::Item> for IteratorTokens<I>
+where
+    I: Iterator + Clone,
+{
+    type Tokens = Self;
+    fn into_tokens(self) -> Self {
+        self
+    }
+}
+
 /// Embed some context with your [`Tokens`] implementation to
 /// access at any time. Use [`Tokens::with_context`] to produce this.
 pub struct WithContext<T, C> {
