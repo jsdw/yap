@@ -12,7 +12,7 @@ mod sep_by_err;
 mod slice;
 mod tokens_while;
 
-use std::borrow::Borrow;
+use core::borrow::Borrow;
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -943,7 +943,7 @@ impl<'a, T: Tokens> Iterator for TokensIter<'a, T> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod test {
 
     use super::*;

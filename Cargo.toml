@@ -15,5 +15,10 @@ include = [
   "src/**/*",
 ]
 
+[features]
+default = []
+std = []
+
 [dev-dependencies]
 logos = "0.12.0"
+yap = { path = ".", features = ["std"] }
