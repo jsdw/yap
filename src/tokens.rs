@@ -36,7 +36,7 @@ pub trait Tokens: Sized {
 
     /// An object which can be used to reset the token stream
     /// to some position.
-    type Location: TokenLocation + Clone;
+    type Location: TokenLocation + PartialEq + core::fmt::Debug + Clone;
 
     /// Return the next token. This is also the basis of the [`Iterator`] implementation
     /// that's returned when you call [`Tokens::as_iter()`]. By implementing it here, we can keep
