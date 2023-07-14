@@ -231,7 +231,7 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// tokens.skip_tokens_while(|c| c.is_whitespace());
     /// assert!(tokens.tokens("world".chars()));
     /// ```
-    pub fn from_iter(iter: I) -> Self {
+    pub fn into_tokens(iter: I) -> Self {
         IterTokens { iter, cursor: 0 }
     }
 }
@@ -351,7 +351,7 @@ mod tests {
     fn iterator_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars = "hello \n\t world".chars();
-        let mut tokens = IterTokens::from_iter(chars);
+        let mut tokens = IterTokens::into_tokens(chars);
 
         let loc = tokens.location();
         assert!(tokens.tokens("hello".chars()));
