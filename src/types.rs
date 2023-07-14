@@ -188,7 +188,7 @@ pub struct IterTokens<I> {
 #[derive(Clone)]
 pub struct IterTokensLocation<I>(IterTokens<I>);
 
-impl <I> core::fmt::Debug for IterTokensLocation<I> {
+impl<I> core::fmt::Debug for IterTokensLocation<I> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "IterTokensLocation(cursor = {})", self.0.cursor)
     }
@@ -197,7 +197,7 @@ impl <I> core::fmt::Debug for IterTokensLocation<I> {
 // Locations match as long as the cursors do. This is as strong as the guarantee
 // for string or slice locations, and in all cases, locations from StrTokens/SliceTokens
 // may be equal even if the underlying tokens are different.
-impl <I> PartialEq for IterTokensLocation<I> {
+impl<I> PartialEq for IterTokensLocation<I> {
     fn eq(&self, other: &Self) -> bool {
         self.0.cursor == other.0.cursor
     }
