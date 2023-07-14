@@ -2,8 +2,8 @@
 
 [![API docs](https://docs.rs/yap/badge.svg)](https://docs.rs/yap)
 
-This small, zero-dependency crate helps you to parse input strings and slices by building on the `Iterator` 
-interface.
+This small, zero-dependency crate helps you to parse input strings, slices and (some) iterators of tokens
+by building on the `Iterator` interface.
 
 The aim of this crate is to provide the sorts of functions you'd come to expect from a parser
 combinator library, but without immersing you into a world of parser combinators, and forcing you
@@ -14,16 +14,16 @@ to sacrifice conciseness in exchange for simplicity.
 - Lots of examples. Every function provided comes with example usage.
 - Prioritise simplicity at the cost of verbosity.
 - Be iterator-centric. Where applicable, combinators return iterators, so you can lean on the `Iterator`
-  interface to parse as much or as little as you want from the input, and collect up the output however 
+  interface to parse as much or as little as you want from the input, and collect up the output however
   you wish.
 - Allow user defined errors to be returned anywhere that it might make sense. Some functions have `_err`
   variants incase you need error information when they don't otherwise hand back errors for simplicity.
 - Location information should always be available, so that you can tell users where something went wrong.
   see `Tokens::offset`
 - Backtracking by default. Coming from Haskell's Parsec, this feels like the sensible default. It means that
-  if one of the provided parsing functions fails to parse what you asked for, it won't consume any input 
+  if one of the provided parsing functions fails to parse what you asked for, it won't consume any input
   trying.
-- Expose all of the "low level" functions. You can save and rewind to locations as needed (see `Token::location`), 
+- Expose all of the "low level" functions. You can save and rewind to locations as needed (see `Token::location`),
   and implement ant of the provided functions using these primitives.
 - Aims to be "fairly quick". Avoids allocations (and allows you to do the same via the iterator-centric interface).
   If you need "as fast as you can get", there are probably quicker alternatives.
@@ -35,10 +35,10 @@ Have a look in the `examples` folder for more in depth examples.
 # Example
 
 ```rust
-use yap::{ 
+use yap::{
     // This trait has all of the parsing methods on it:
     Tokens,
-    // Allows you to use `.into_tokens()` on strings and slices, 
+    // Allows you to use `.into_tokens()` on strings and slices,
     // to get an instance of the above:
     IntoTokens
 };
@@ -79,7 +79,7 @@ let op_or_digit = tokens.sep_by_all(
     |t| t.surrounded_by(
         |t| parse_digits(t).map(OpOrDigit::Digit),
         |t| { t.skip_tokens_while(|c| c.is_ascii_whitespace()); }
-    ), 
+    ),
     |t| parse_op(t).map(OpOrDigit::Op)
 );
 
@@ -89,7 +89,7 @@ let mut current_digit = 0;
 for d in op_or_digit {
     match d {
         OpOrDigit::Op(op) => {
-            current_op = op 
+            current_op = op
         },
         OpOrDigit::Digit(n) => {
             match current_op {
