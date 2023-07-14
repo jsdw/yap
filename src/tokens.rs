@@ -36,7 +36,7 @@ pub trait Tokens: Sized {
 
     /// An object which can be used to reset the token stream
     /// to some position.
-    type Location: TokenLocation + Clone;
+    type Location: TokenLocation + PartialEq + core::fmt::Debug + Clone;
 
     /// Return the next token. This is also the basis of the [`Iterator`] implementation
     /// that's returned when you call [`Tokens::as_iter()`]. By implementing it here, we can keep
@@ -195,7 +195,7 @@ pub trait Tokens: Sized {
     ///
     /// **Note:** the slice returned from this prevents the original tokens from being used until
     /// it's dropped, and resets the original tokens to their current location on `Drop`. if you
-    /// [`std::mem::forget`] it, the original token location will equal whatever the slice location
+    /// [`core::mem::forget`] it, the original token location will equal whatever the slice location
     /// was when it was forgotten.
     ///
     /// # Example

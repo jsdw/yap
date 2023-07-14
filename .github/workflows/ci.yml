@@ -98,3 +98,29 @@ jobs:
           command: clippy
           args: --all-targets -- -D warnings
 
+  no_std:
+    name: Check no_std build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          target: aarch64-unknown-none
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v1.3.0
+
+      - name: Check no_std build
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: check
+          # The aarch64-unknown-none doesn't support `std`, so this
+          # will fail if the crate is not no_std compatible ie tries
+          # to use and std things.
+          args: --no-default-features --target aarch64-unknown-none
