@@ -188,7 +188,7 @@ pub struct IterTokens<I> {
 #[derive(Clone)]
 pub struct IterTokensLocation<I>(IterTokens<I>);
 
-impl <I> std::fmt::Debug for IterTokensLocation<I> {
+impl <I> core::fmt::Debug for IterTokensLocation<I> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "IterTokensLocation(cursor = {})", self.0.cursor)
     }
@@ -337,7 +337,6 @@ with_context_impls!(WithContextMut &mut);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{IntoTokens, Tokens};
 
     #[test]
     fn exotic_character_bounds() {
