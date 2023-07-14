@@ -1,3 +1,11 @@
+## 0.11.0
+
+Thankyou @Easyoakland for both of these contributions!
+
+- Add support for `no_std` environments ([#7](https://github.com/jsdw/yap/pull/7)).
+- Add `yap::types::IterToken`, which can be used for parsing tokens from arbitrary
+  iterators (as long as they impl Clone).
+
 ## 0.10.0
 
 - Remove pointless `skip_optional` function.
