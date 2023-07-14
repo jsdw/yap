@@ -174,6 +174,100 @@ impl<'a> IntoTokens<char> for &'a str {
     }
 }
 
+/// This is what we are given back if we call [`IterTokens::into_tokens(iter)`] on
+/// an `impl Iterator + Clone`. It implements the [`Tokens`] interface.
+#[derive(Clone)]
+pub struct IterTokens<I> {
+    iter: I,
+    cursor: usize,
+}
+
+/// This implements [`TokenLocation`] and stores the location and state of
+/// our current cursor into some iterator. The location is equivalent to `offset`
+/// in [`Iterator::nth(offset)`].
+#[derive(Clone)]
+pub struct IterTokensLocation<I>(IterTokens<I>);
+
+impl<I> core::fmt::Debug for IterTokensLocation<I> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "IterTokensLocation(cursor = {})", self.0.cursor)
+    }
+}
+
+// Locations match as long as the cursors do. This is as strong as the guarantee
+// for string or slice locations, and in all cases, locations from StrTokens/SliceTokens
+// may be equal even if the underlying tokens are different.
+impl<I> PartialEq for IterTokensLocation<I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.cursor == other.0.cursor
+    }
+}
+
+impl<I> TokenLocation for IterTokensLocation<I> {
+    fn offset(&self) -> usize {
+        self.0.cursor
+    }
+}
+
+impl<I: Iterator + Clone> IterTokens<I> {
+    /// We can't define a blanket impl for [`IntoTokens`] on all `impl Iterator + Clone` without
+    /// [specialization](https://rust-lang.github.io/rfcs/1210-impl-specialization.html).
+    ///
+    /// Instead, use this method to convert a suitable iterator into [`Tokens`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use yap::{ Tokens, types::IterTokens };
+    ///
+    /// // In normal usage, "hello \n\t world".into_tokens()
+    /// // would be preferred here (which would give StrTokens).
+    /// // This is just to demonstrate using IterTokens:
+    /// let chars_iter = "hello \n\t world".chars();
+    /// let mut tokens = IterTokens::into_tokens(chars_iter);
+    ///
+    /// // now we have tokens, we can do some parsing:
+    /// assert!(tokens.tokens("hello".chars()));
+    /// tokens.skip_tokens_while(|c| c.is_whitespace());
+    /// assert!(tokens.tokens("world".chars()));
+    /// ```
+    pub fn into_tokens(iter: I) -> Self {
+        IterTokens { iter, cursor: 0 }
+    }
+}
+
+impl<I> Tokens for IterTokens<I>
+where
+    I: Iterator + Clone,
+{
+    type Item = I::Item;
+    type Location = IterTokensLocation<I>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cursor += 1;
+        self.iter.next()
+    }
+    fn location(&self) -> Self::Location {
+        IterTokensLocation(self.clone())
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        *self = location.0;
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.cursor == location.0.cursor
+    }
+}
+
+impl<I> IntoTokens<I::Item> for IterTokens<I>
+where
+    I: Iterator + Clone,
+{
+    type Tokens = Self;
+    fn into_tokens(self) -> Self {
+        self
+    }
+}
+
 /// Embed some context with your [`Tokens`] implementation to
 /// access at any time. Use [`Tokens::with_context`] to produce this.
 pub struct WithContext<T, C> {
@@ -242,7 +336,7 @@ with_context_impls!(WithContextMut &mut);
 
 #[cfg(test)]
 mod tests {
-    use crate::{IntoTokens, Tokens};
+    use super::*;
 
     #[test]
     fn exotic_character_bounds() {
@@ -251,5 +345,25 @@ mod tests {
         assert_eq!(tokens.next(), Some('🗻'));
         assert_eq!(tokens.next(), Some('∈'));
         assert_eq!(tokens.next(), Some('🌏'));
+    }
+
+    #[test]
+    fn iterator_tokens_sanity_check() {
+        // In reality, one should always prefer to use StrTokens for strings:
+        let chars = "hello \n\t world".chars();
+        let mut tokens = IterTokens::into_tokens(chars);
+
+        let loc = tokens.location();
+        assert!(tokens.tokens("hello".chars()));
+
+        tokens.set_location(loc.clone());
+        assert!(tokens.tokens("hello".chars()));
+
+        tokens.skip_tokens_while(|c| c.is_whitespace());
+
+        assert!(tokens.tokens("world".chars()));
+
+        tokens.set_location(loc);
+        assert!(tokens.tokens("hello".chars()));
     }
 }
