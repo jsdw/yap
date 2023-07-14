@@ -224,7 +224,7 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// // would be preferred here (which would give StrTokens).
     /// // This is just to demonstrate using IterTokens:
     /// let chars_iter = "hello \n\t world".chars();
-    /// let mut tokens = IterTokens::from_iter(chars_iter);
+    /// let mut tokens = IterTokens::into_tokens(chars_iter);
     ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
