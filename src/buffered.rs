@@ -114,6 +114,20 @@ pub struct StackString<const N: usize> {
     len: usize,
 }
 
+impl<const N: usize> StackString<N> {
+    /// Push a new [`u8`] onto the [`StackString`].
+    /// It is ok to make the [`StackString`] invalid Utf8 as long as
+    /// it is not dereferenced as a [`str`] while invalid.
+    pub fn push(&mut self, val: u8) -> Result<(), ()> {
+        if self.len == N {
+            return Err(());
+        }
+        self.buf[self.len] = val;
+        self.len += 1;
+        Ok(())
+    }
+}
+
 impl<const N: usize> Default for StackString<N> {
     fn default() -> Self {
         Self {
@@ -123,16 +137,45 @@ impl<const N: usize> Default for StackString<N> {
     }
 }
 
-impl<I: Into<u8>, const N: usize> FromIterator<I> for StackString<N> {
+impl<const N: usize> FromIterator<u8> for StackString<N> {
     /// Creates a [`StackString`] from an iterator.
     /// # Panics
     /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
-    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
+    fn from_iter<I: IntoIterator<Item = u8>>(iter: I) -> Self {
         let mut out = Self::default();
         for (i, val) in iter.into_iter().enumerate() {
             assert!(i < N, "Iterator longer than max buffer length ({N})");
-            out.buf[i] = val.into();
+            out.buf[i] = val;
             out.len += 1;
+        }
+        out
+    }
+}
+
+impl<const N: usize> FromIterator<char> for StackString<N> {
+    /// Creates a [`StackString`] from an iterator.
+    /// # Panics
+    /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
+    fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> Self {
+        let mut out = Self::default();
+        for val in iter.into_iter() {
+            match val.len_utf8() {
+                1 => out
+                    .push(val as u8)
+                    .unwrap_or_else(|_| panic!("Iterator longer than max buffer length ({N})")),
+                _ => {
+                    let mut buf = [0; 4];
+                    let encoded = val.encode_utf8(&mut buf);
+                    let remaining = N - out.len;
+                    if remaining >= encoded.len() {
+                        for b in encoded.bytes() {
+                            out.push(b).expect("Enough capacity left")
+                        }
+                    } else {
+                        panic!("Iterator longer than max buffer length ({N})");
+                    }
+                }
+            }
         }
         out
     }
@@ -173,6 +216,12 @@ mod test {
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, "123🗻∈🌏");
+        let a: String = IterTokens::into_tokens("123🗻∈🌏".chars())
+            .as_buffered::<StackString<14>>()
+            .parse_remaining()
+            .expect("NonEmpty")
+            .expect("Parse success");
+        assert_eq!(a, "123🗻∈🌏");
     }
 
     #[test]
@@ -205,7 +254,7 @@ mod test {
         assert_eq!(a, 12);
         let a: i8 = "-123"
             .into_tokens()
-            .as_buffered::<String>()
+            .as_buffered::<StackString<4>>()
             .signed_digit()
             .expect("NonEmpty")
             .expect("Parse success");
