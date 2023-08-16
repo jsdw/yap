@@ -12,7 +12,7 @@ mod sep_by_err;
 mod slice;
 mod tokens_while;
 
-use core::borrow::Borrow;
+use core::{borrow::Borrow, marker::PhantomData};
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -24,7 +24,10 @@ pub use sep_by_err::SepByErr;
 pub use slice::Slice;
 pub use tokens_while::TokensWhile;
 
-use crate::types::{WithContext, WithContextMut};
+use crate::{
+    buffered::BufferedTokens,
+    types::{WithContext, WithContextMut},
+};
 
 /// The tokens trait is an extension of the [`Iterator`] trait, and adds a bunch of useful methods
 /// for parsing tokens from the underlying iterable type. Implementations don't need to directly
@@ -111,6 +114,16 @@ pub trait Tokens: Sized {
     /// consume tokens as you might expect, and so must be used with care when parsing input.
     fn as_iter(&'_ mut self) -> TokensIter<'_, Self> {
         TokensIter { tokens: self }
+    }
+
+    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating to a buffer.
+    /// It is generic over the buffer so one can use a heap allocated type (ex. [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html))
+    /// or a stack allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html)).
+    fn as_buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
+        BufferedTokens {
+            tokens: self,
+            buf: PhantomData,
+        }
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -895,6 +908,28 @@ pub trait Tokens: Sized {
             Err(err) => {
                 self.set_location(location);
                 Err(err)
+            }
+        }
+    }
+
+    /// Parses a line ending of either `\n` (like on linux)  or `\r\n` (like on windows)
+    fn line_ending(&mut self) -> Option<&'static str>
+    where
+        Self: Tokens<Item = char>,
+    {
+        self.optional(|t| t.token('\n').then_some("\n"))
+            .or_else(|| self.optional(|t| t.tokens("\r\n".chars()).then_some("\r\n")))
+    }
+
+    /// Checks next input is [`None`] and if true consumes the `None`.
+    fn eof(&mut self) -> bool {
+        let loc = self.location();
+        // Check nothing comes after
+        match self.next() {
+            None => true,
+            Some(_) => {
+                self.set_location(loc);
+                false
             }
         }
     }

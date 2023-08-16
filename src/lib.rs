@@ -115,5 +115,6 @@ assert_eq!(remaining, ",foobar");
 mod one_of;
 mod tokens;
 
+pub mod buffered;
 pub mod types;
 pub use tokens::{IntoTokens, TokenLocation, Tokens};
