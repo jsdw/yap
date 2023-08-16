@@ -22,6 +22,14 @@ where
 {
     /// Use [`str::parse`] to parse the next `n` elements.
     /// [`None`] if this is 0 elements.
+    /// # Example
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "123abc456".into_tokens();
+    ///
+    /// assert_eq!(tokens.as_buffered::<String>().parse_n::<u8>(3).expect("NonEmpty").expect("Parse success"), 123);
+    /// ```
     pub fn parse_n<O>(&mut self, n: usize) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -32,6 +40,14 @@ where
 
     /// Use [`str::parse`] to parse the remaining elements until the next [`None`].
     /// [`None`] if this is 0 elements.
+    /// # Example
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "65535".into_tokens();
+    ///
+    /// assert_eq!(tokens.as_buffered::<String>().parse_remaining::<u16>().expect("NonEmpty").expect("Parse success"), 65535);
+    /// ```
     pub fn parse_remaining<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -42,6 +58,20 @@ where
 
     /// Use [`str::parse`] to parse the next chunk of input matching a predicate.
     /// [`None`] if this is 0 elements.
+    /// # Example
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "123456".into_tokens();
+    ///
+    /// assert_eq!(tokens
+    ///         .as_buffered::<String>()
+    ///         .parse_while::<u16, _>(|&t| t.to_digit(10).unwrap() < 6)
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     12345
+    /// );
+    /// ```
     pub fn parse_while<O, F>(&mut self, take_while: F) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -57,7 +87,21 @@ where
     T: Tokens<Item = char>,
     Buf: FromIterator<T::Item> + Deref<Target = str>,
 {
-    /// Parse digits.
+    /// Parse next chunk of digits.
+    /// # Example
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "123456".into_tokens();
+    ///
+    /// assert_eq!(tokens
+    ///         .as_buffered::<String>()
+    ///         .digit::<u32>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     123456
+    /// );
+    /// ```
     pub fn digit<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -65,7 +109,31 @@ where
         self.parse_while(|t| t.is_numeric())
     }
 
-    /// Parses digits with a sign (`+`/`-`) in front.
+    /// Parses next chunk of digits with a sign (`+`/`-`) in front.
+    /// # Example
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "+123456".into_tokens();
+    ///
+    /// assert_eq!(tokens
+    ///         .as_buffered::<String>()
+    ///         .signed_digit::<i32>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     123456
+    /// );
+    ///
+    /// let mut tokens = "-123456".into_tokens();
+    ///
+    /// assert_eq!(tokens
+    ///         .as_buffered::<String>()
+    ///         .signed_digit::<i32>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     -123456
+    /// );
+    /// ```
     pub fn signed_digit<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -86,7 +154,46 @@ where
         }
     }
 
-    /// Parses alphabetical characters.
+    /// Parses next chunk of alphabetical characters.
+    /// # Example
+    /// ```
+    /// use core::str::FromStr;
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "aab123".into_tokens();
+    ///
+    /// #[derive(Debug, PartialEq)]
+    /// struct AB {
+    ///     a: usize,
+    ///     b: usize,
+    /// }
+    ///
+    /// impl FromStr for AB {
+    ///     type Err = ();
+    ///
+    ///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    ///         let mut a = 0;
+    ///         let mut b = 0;
+    ///         for c in s.chars() {
+    ///             match c {
+    ///                 'a' => a += 1,
+    ///                 'b' => b += 1,
+    ///                 _ => return Err(()),
+    ///             }
+    ///         }
+    ///         Ok(AB { a, b })
+    ///     }
+    /// }
+    ///
+    /// assert_eq!(
+    ///     tokens
+    ///         .as_buffered::<String>()
+    ///         .alpha::<AB>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     AB { a: 2, b: 1 }
+    /// );
+    /// ```
     pub fn alpha<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -94,7 +201,49 @@ where
         self.parse_while(|t| t.is_alphabetic())
     }
 
-    /// Parses alphanumeric characters.
+    /// Parses next chunk of alphanumeric characters.
+    /// # Example
+    /// ```
+    /// use core::str::FromStr;
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut tokens = "aab123".into_tokens();
+    ///
+    /// #[derive(Debug, PartialEq)]
+    /// struct ABNum {
+    ///     a: usize,
+    ///     b: usize,
+    ///     num: u32,
+    /// }
+    ///
+    /// impl FromStr for ABNum {
+    ///     type Err = ();
+    ///
+    ///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    ///         let mut a = 0;
+    ///         let mut b = 0;
+    ///         let mut num = 0;
+    ///         for c in s.chars() {
+    ///             match c {
+    ///                 'a' => a += 1,
+    ///                 'b' => b += 1,
+    ///                 c if c.is_digit(10) => num += c.to_digit(10).unwrap(),
+    ///                 _ => return Err(()),
+    ///             }
+    ///         }
+    ///         Ok(ABNum { a, b, num })
+    ///     }
+    /// }
+    ///
+    /// assert_eq!(
+    ///     tokens
+    ///         .as_buffered::<String>()
+    ///         .alphanumeric::<ABNum>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     ABNum { a: 2, b: 1, num: 6 }
+    /// );
+    /// ```
     pub fn alphanumeric<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
         O: FromStr,
@@ -106,7 +255,7 @@ where
 /// A type that can collect [`u8`] on the stack to be used to [`str::parse`].
 /// Requires a max buffer size at compile time.
 /// # Panics
-/// - Collecting more items than the buffer's max size causes a panic.
+/// - Collecting more [`u8`] than the buffer's max size causes a panic.
 /// - Invalid-Utf8 will panic when dereferencing to a [`str`].
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct StackString<const N: usize> {
@@ -115,9 +264,10 @@ pub struct StackString<const N: usize> {
 }
 
 impl<const N: usize> StackString<N> {
-    /// Push a new [`u8`] onto the [`StackString`].
+    /// Push a new [`u8`] onto the [`StackString`]. Failing if not enough room.
     /// It is ok to make the [`StackString`] invalid Utf8 as long as
     /// it is not dereferenced as a [`str`] while invalid.
+    #[allow(clippy::result_unit_err)]
     pub fn push(&mut self, val: u8) -> Result<(), ()> {
         if self.len == N {
             return Err(());
@@ -159,22 +309,15 @@ impl<const N: usize> FromIterator<char> for StackString<N> {
     fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> Self {
         let mut out = Self::default();
         for val in iter.into_iter() {
-            match val.len_utf8() {
-                1 => out
-                    .push(val as u8)
-                    .unwrap_or_else(|_| panic!("Iterator longer than max buffer length ({N})")),
-                _ => {
-                    let mut buf = [0; 4];
-                    let encoded = val.encode_utf8(&mut buf);
-                    let remaining = N - out.len;
-                    if remaining >= encoded.len() {
-                        for b in encoded.bytes() {
-                            out.push(b).expect("Enough capacity left")
-                        }
-                    } else {
-                        panic!("Iterator longer than max buffer length ({N})");
-                    }
+            let mut buf = [0; 4];
+            let encoded = val.encode_utf8(&mut buf);
+            let remaining = N - out.len;
+            if remaining >= encoded.len() {
+                for b in encoded.bytes() {
+                    out.push(b).expect("Enough capacity left")
                 }
+            } else {
+                panic!("Iterator longer than max buffer length ({N})");
             }
         }
         out

@@ -118,7 +118,8 @@ pub trait Tokens: Sized {
 
     /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating to a buffer.
     /// It is generic over the buffer so one can use a heap allocated type (ex. [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html))
-    /// or a stack allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html)).
+    /// or a stack allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html) or [`crate::buffered::StackString`]).
+    /// If a buffer of tokens is needed directly use `tokens.as_iter().collect()`.
     fn as_buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
         BufferedTokens {
             tokens: self,
