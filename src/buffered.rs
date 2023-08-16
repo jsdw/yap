@@ -164,16 +164,6 @@ mod test {
     use crate::{types::IterTokens, IntoTokens};
 
     #[test]
-    fn parse_unsigned() {
-        let a: u8 = ("123🗻∈🌏".into_tokens())
-            .as_buffered::<String>()
-            .digit()
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(a, 123);
-    }
-
-    #[test]
     #[cfg(feature = "std")]
     fn parse_string() {
         let a: String = "123🗻∈🌏"
@@ -183,6 +173,17 @@ mod test {
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, "123🗻∈🌏");
+    }
+
+    #[test]
+    #[cfg(feature = "std")]
+    fn parse_unsigned() {
+        let a: u8 = ("123🗻∈🌏".into_tokens())
+            .as_buffered::<String>()
+            .digit()
+            .expect("NonEmpty")
+            .expect("Parse success");
+        assert_eq!(a, 123);
     }
 
     #[test]
