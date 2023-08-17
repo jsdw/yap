@@ -24,11 +24,32 @@ where
     /// [`None`] if this is 0 elements.
     /// # Example
     /// ```
-    /// use yap::{Tokens, IntoTokens};
+    /// use yap::{Tokens, IntoTokens, buffered::StackString};
     ///
     /// let mut tokens = "123abc456".into_tokens();
+    /// let mut buffered = tokens.as_buffered::<StackString<3>>();
     ///
-    /// assert_eq!(tokens.as_buffered::<String>().parse_n::<u8>(3).expect("NonEmpty").expect("Parse success"), 123);
+    /// assert_eq!(
+    ///     buffered
+    ///         .parse_n::<u8>(3)
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     123
+    /// );
+    /// assert_eq!(
+    ///     buffered
+    ///         .parse_n::<String>(3)
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     "abc"
+    /// );
+    /// assert_eq!(
+    ///     buffered
+    ///         .parse_n::<u16>(3)
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     456
+    /// );
     /// ```
     pub fn parse_n<O>(&mut self, n: usize) -> Option<Result<O, <O as FromStr>::Err>>
     where
@@ -46,7 +67,15 @@ where
     ///
     /// let mut tokens = "65535".into_tokens();
     ///
-    /// assert_eq!(tokens.as_buffered::<String>().parse_remaining::<u16>().expect("NonEmpty").expect("Parse success"), 65535);
+    /// assert_eq!(
+    ///     tokens
+    ///         .as_buffered::<String>()
+    ///         .parse_remaining::<u16>()
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     65535
+    /// );
+    /// assert!(tokens.eof())
     /// ```
     pub fn parse_remaining<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
     where
@@ -60,16 +89,24 @@ where
     /// [`None`] if this is 0 elements.
     /// # Example
     /// ```
-    /// use yap::{Tokens, IntoTokens};
+    /// use yap::{buffered::StackString, IntoTokens, Tokens};
     ///
     /// let mut tokens = "123456".into_tokens();
+    /// let mut buffered = tokens.as_buffered::<StackString<5>>();
     ///
-    /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
+    /// assert_eq!(
+    ///     buffered
     ///         .parse_while::<u16, _>(|&t| t.to_digit(10).unwrap() < 6)
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     12345
+    /// );
+    /// assert_eq!(
+    ///     buffered
+    ///         .parse_while::<u8, _>(|&t| t.to_digit(10).unwrap() == 6)
+    ///         .expect("NonEmpty")
+    ///         .expect("Parse success"),
+    ///     6
     /// );
     /// ```
     pub fn parse_while<O, F>(&mut self, take_while: F) -> Option<Result<O, <O as FromStr>::Err>>
@@ -324,6 +361,19 @@ impl<const N: usize> FromIterator<char> for StackString<N> {
     }
 }
 
+impl<const N: usize> FromStr for StackString<N> {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut out = StackString::default();
+        // FromIterator impl panics. Use this instead.
+        for b in s.bytes() {
+            out.push(b)?
+        }
+        Ok(out)
+    }
+}
+
 impl<const N: usize> Deref for StackString<N> {
     type Target = str;
 
@@ -418,6 +468,13 @@ mod test {
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
+        let a: StackString<21> = "-123456789🗻∈🌏"
+            .into_tokens()
+            .as_buffered::<StackString<21>>()
+            .parse_remaining()
+            .expect("NonEmpty")
+            .expect("Parse success");
+        assert_eq!(&*a, "-123456789🗻∈🌏");
     }
 
     #[test]
