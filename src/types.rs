@@ -589,4 +589,25 @@ mod tests {
         tokens.set_location(loc);
         assert!(tokens.tokens("hello".chars()));
     }
+
+    #[test]
+    fn stream_tokens_sanity_check() {
+        // In reality, one should always prefer to use StrTokens for strings:
+        let chars: &mut dyn Iterator<Item = char> = &mut "hello \n\t world".chars();
+        // Can't `chars.clone()` so:
+        let mut tokens = StreamTokens::into_tokens(chars);
+
+        let loc = tokens.location();
+        assert!(tokens.tokens("hello".chars()));
+
+        tokens.set_location(loc.clone());
+        assert!(tokens.tokens("hello".chars()));
+
+        tokens.skip_tokens_while(|c| c.is_whitespace());
+
+        assert!(tokens.tokens("world".chars()));
+
+        tokens.set_location(loc);
+        assert!(tokens.tokens("hello".chars()));
+    }
 }
