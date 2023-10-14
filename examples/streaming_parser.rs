@@ -1,14 +1,33 @@
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     io::{stdin, Read},
     iter::Iterator,
-    ops::Deref,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex},
 };
 use yap::{TokenLocation, Tokens};
 
-type SharedBuffer<T> = Vec<Arc<T>>;
+/// Buffer over items of an iterator.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Buffer<Item> {
+    oldest_elem_id: usize,
+    elements: VecDeque<Option<Item>>,
+    /// Sorted list of the oldest items needed per location
+    checkout: Vec<usize>,
+}
 
+impl<Item> Default for Buffer<Item> {
+    fn default() -> Self {
+        Self {
+            oldest_elem_id: Default::default(),
+            elements: Default::default(),
+            checkout: Default::default(),
+        }
+    }
+}
+
+/// Buffers over an iterator that can't itself be cloned.
+/// Enables parsing a stream of values such such as from a network socket or other realtime source.
 #[derive(Clone, Debug)]
 pub struct BufferedTokens<I>
 where
@@ -16,43 +35,40 @@ where
 {
     iter: I,
     cursor: usize,
-    buffer: SharedBuffer<Option<I::Item>>,
-    /// - This list is used to broadcast new elements to all locations' buffers for when they are used to revert the iterator.
-    /// - Weak references to locations so that they can be dropped when only referenced here.
-    /// - The outer `Arc<Mutex<>>` is to get around the & in the location(&self) method.
-    locs: Arc<Mutex<Vec<Weak<Mutex<BufferedTokensLocation<I::Item>>>>>>,
+    /// Shared buffer of items and the id of the oldest item in the buffer.
+    buffer: Arc<Mutex<Buffer<I::Item>>>,
 }
 
 /// Token location that stores the changes since it was created for when the iterator is reset.
 #[derive(Clone, Debug)]
 pub struct BufferedTokensLocation<Item> {
     cursor: usize,
-    buffer: SharedBuffer<Option<Item>>,
+    buffer: Arc<Mutex<Buffer<Item>>>,
 }
 
-/// Newtype to allow defining a TokenLocation.
-#[derive(Clone, Debug)]
-pub struct SharedBufferedTokensLocation<Item> {
-    inner: Arc<Mutex<BufferedTokensLocation<Item>>>,
+impl<Item> PartialEq for BufferedTokensLocation<Item> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cursor == other.cursor && Arc::ptr_eq(&self.buffer, &other.buffer)
+    }
 }
+impl<Item> Eq for BufferedTokensLocation<Item> {}
 
-impl<Item> Deref for SharedBufferedTokensLocation<Item> {
-    type Target = Arc<Mutex<BufferedTokensLocation<Item>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+impl<Item> Drop for BufferedTokensLocation<Item> {
+    fn drop(&mut self) {
+        // Would rather not free memory then panic this thread because another panicked.
+        if let Ok(mut buf) = self.buffer.lock() {
+            let idx = buf
+                .checkout
+                .binary_search(&self.cursor)
+                .expect("missing entry for location in checkout");
+            buf.checkout.remove(idx);
+        }
     }
 }
 
-impl<Item> From<Arc<Mutex<BufferedTokensLocation<Item>>>> for SharedBufferedTokensLocation<Item> {
-    fn from(value: Arc<Mutex<BufferedTokensLocation<Item>>>) -> Self {
-        Self { inner: value }
-    }
-}
-
-impl<I> TokenLocation for SharedBufferedTokensLocation<I> {
+impl<Item> TokenLocation for BufferedTokensLocation<Item> {
     fn offset(&self) -> usize {
-        self.lock().unwrap().cursor
+        self.cursor
     }
 }
 
@@ -62,7 +78,6 @@ impl<I: Iterator> BufferedTokens<I> {
             iter,
             cursor: Default::default(),
             buffer: Default::default(),
-            locs: Default::default(),
         }
     }
 }
@@ -74,51 +89,69 @@ where
 {
     type Item = I::Item;
 
-    type Location = SharedBufferedTokensLocation<I::Item>;
+    type Location = BufferedTokensLocation<I::Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.cursor += 1;
-        let mut locs = self.locs.lock().unwrap();
-        // If buffer has elements empty buffer before getting new elements.
-        if !self.buffer.is_empty() {
-            self.buffer.remove(0).as_ref().clone()
-        } else {
-            let next = self.iter.next();
-            let next_buffered = Arc::new(next.clone());
-            let mut i = 0;
-            while i < locs.len() {
-                if let Some(loc) = locs[i].upgrade() {
-                    loc.lock().unwrap().buffer.push(next_buffered.clone());
-                    i += 1;
-                } else {
-                    // Location order doesn't matter because they are all broadcast to for new elements.
-                    locs.swap_remove(i);
-                }
+
+        // Try buffer
+        {
+            let buf = self.buffer.lock().expect("not poisoned");
+            // If buffer has elements use buffer before getting new elements.
+            if let Some(val) = buf.elements.get(self.cursor - buf.oldest_elem_id).cloned() {
+                return val;
             }
-            next
+        }
+
+        // Clear buffer of old values
+        {
+            let mut buf = self.buffer.lock().expect("not poisoned");
+            // Remove old values no longer needed by any location
+            let min = match buf.checkout.first() {
+                Some(&x) => x.min(self.cursor),
+                None => self.cursor,
+            };
+            while (buf.oldest_elem_id < min) && (!buf.elements.is_empty()) {
+                buf.elements.pop_front();
+                buf.oldest_elem_id += 1;
+            }
+        }
+
+        // Handle cache miss
+        {
+            let next = self.iter.next();
+            let mut buf = self.buffer.lock().expect("not poisoned");
+            // Don't save to buffer if no locations exist which might need the value again
+            if buf.checkout.is_empty() {
+                return next;
+            } else {
+                buf.elements.push_back(next.clone());
+                next
+            }
         }
     }
 
     fn location(&self) -> Self::Location {
-        let loc = Arc::new(Mutex::new(BufferedTokensLocation {
+        // Checkout value at current location
+        let mut buf = self.buffer.lock().expect("not poisoned");
+        match buf.checkout.binary_search(&self.cursor) {
+            Ok(x) => buf.checkout.insert(x, self.cursor),
+            Err(x) => buf.checkout.insert(x, self.cursor),
+        };
+        BufferedTokensLocation {
             cursor: self.cursor,
-            buffer: self.buffer.clone(),
-        }));
-        self.locs.lock().unwrap().push(Arc::downgrade(&loc));
-        loc.into()
+            buffer: Arc::clone(&self.buffer),
+        }
     }
 
     fn set_location(&mut self, location: Self::Location) {
-        // Sets all value necessary to reset the iterator.
-        // It uses the location's store of buffered values.
-        // Notice that the `locs` doesn't need to be changed because all locations should stay subscribed.
-        let location = location.lock().unwrap();
+        // Update cursor to new value
         self.cursor = location.cursor;
-        self.buffer = location.buffer.clone();
+        // Location removes itself from checkout on drop
     }
 
     fn is_at_location(&self, location: &Self::Location) -> bool {
-        self.cursor == location.lock().unwrap().cursor
+        self.cursor == location.cursor
     }
 }
 
@@ -131,7 +164,7 @@ fn parse_digit_pair(tokens: &mut impl Tokens<Item = u8>) -> Option<u32> {
 }
 
 /// Parses a line ending of either "\r\n" (windows) or "\n" (linux)
-fn line_ending(tokens: &mut impl Tokens<Item = u8>) -> Option<&str> {
+fn line_ending(tokens: &mut impl Tokens<Item = u8>) -> Option<&'static str> {
     yap::one_of!(tokens;
         tokens.optional(|t| t.tokens("\r\n".chars().map(|x| u8::try_from(x).unwrap())).then_some("\r\n")),
         tokens.optional(|t| t.token(u8::try_from('\n').unwrap()).then_some("\n")),
@@ -145,6 +178,7 @@ fn main() {
     let start = tokens.location();
     // Demonstrate streaming parsing of input.
     // This is relatively painless and looks the same as a non-streaming parser because `BufferedTokens` handles buffering and `Bytes<Stdin>` handles blocking.
+    // Parse pairs of digits into their sum. Stop parsing when a non-pair of digits is encountered.
     for line_of_digits in tokens.sep_by(
         |t| Some(t.many(|t| parse_digit_pair(t)).collect::<Vec<_>>()),
         |t| line_ending(t).is_some(),
@@ -153,15 +187,17 @@ fn main() {
     }
     // Reset location to show usage of internal buffer and freeing memory once the location doesn't need a diff buffer.
     tokens.set_location(start);
-    let mut i = 0;
     // Internal buffer is cleared since there are no longer locations which need the items.
-    loop {
-        i += 1;
-        // Speed up process by avoiding too many prints.
-        if i % 1000 == 0 {
-            eprintln!("Next: {:?}", tokens.next());
+    while let Some(x) = tokens.as_iter().next() {
+        println!("Element: {x}");
+        if tokens
+            .buffer
+            .lock()
+            .expect("not poisoned")
+            .elements
+            .is_empty()
+        {
+            break;
         }
-        tokens.next();
-        tokens.buffer.shrink_to_fit();
     }
 }
