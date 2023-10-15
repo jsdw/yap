@@ -336,7 +336,7 @@ mod stream_tokens {
             buf.checkout.insert(idx, self.cursor);
             // Then copy
             Self {
-                cursor: self.cursor.clone(),
+                cursor: self.cursor,
                 buffer: self.buffer.clone(),
             }
         }
