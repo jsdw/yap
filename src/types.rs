@@ -591,6 +591,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn stream_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars: &mut dyn Iterator<Item = char> = &mut "hello \n\t world".chars();

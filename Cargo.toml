@@ -16,9 +16,12 @@ include = [
 ]
 
 [features]
-default = []
+default = ["std"]
 std = []
 
 [dev-dependencies]
 logos = "0.12.0"
-yap = { path = ".", features = ["std"] }
+
+[[example]]
+name = "streaming_parser"
+required-features = ["std"]
