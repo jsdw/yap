@@ -301,7 +301,7 @@ mod stream_tokens {
     }
 
     /// Enables parsing a stream of values from an iterator that can't itself be cloned.
-    /// In order to be able to rewind the iterator it must save values since the last created [`StreamTokensLocation`]
+    /// In order to be able to rewind the iterator it must save values since the oldest not [`Drop`]ed [`StreamTokensLocation`]
     #[derive(Clone, Debug)]
     pub struct StreamTokens<I>
     where
