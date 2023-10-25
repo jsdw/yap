@@ -22,7 +22,7 @@ where
     /// [`None`] if this is 0 elements.
     /// # Example
     /// ```
-    /// use yap::{Tokens, IntoTokens, buffered::StackString};
+    /// use yap::{Tokens, IntoTokens, buffered::ArrayString};
     ///
     /// let mut tokens = "123abc456".into_tokens();
     /// let mut buffered = tokens.as_buffered();
@@ -302,14 +302,14 @@ where
 /// - Collecting more [`u8`] than the buffer's max size causes a panic.
 /// - Invalid-Utf8 will panic when dereferencing to a [`str`].
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct StackString<const N: usize> {
+pub struct ArrayString<const N: usize> {
     buf: [u8; N],
     len: usize,
 }
 
-impl<const N: usize> StackString<N> {
-    /// Push a new [`u8`] onto the [`StackString`]. Failing if not enough room.
-    /// It is ok to make the [`StackString`] invalid Utf8 as long as
+impl<const N: usize> ArrayString<N> {
+    /// Push a new [`u8`] onto the [`ArrayString`]. Failing if not enough room.
+    /// It is ok to make the [`ArrayString`] invalid Utf8 as long as
     /// it is not dereferenced as a [`str`] while invalid.
     #[allow(clippy::result_unit_err)]
     pub fn push(&mut self, val: u8) -> Result<(), ()> {
@@ -322,7 +322,7 @@ impl<const N: usize> StackString<N> {
     }
 }
 
-impl<const N: usize> Default for StackString<N> {
+impl<const N: usize> Default for ArrayString<N> {
     fn default() -> Self {
         Self {
             buf: array::from_fn(|_| Default::default()),
@@ -331,10 +331,10 @@ impl<const N: usize> Default for StackString<N> {
     }
 }
 
-impl<const N: usize> FromIterator<u8> for StackString<N> {
-    /// Creates a [`StackString`] from an iterator.
+impl<const N: usize> FromIterator<u8> for ArrayString<N> {
+    /// Creates a [`ArrayString`] from an iterator.
     /// # Panics
-    /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
+    /// Panics if the iterator is longer than the internal buffer of the [`ArrayString`]
     fn from_iter<I: IntoIterator<Item = u8>>(iter: I) -> Self {
         let mut out = Self::default();
         for (i, val) in iter.into_iter().enumerate() {
@@ -346,10 +346,10 @@ impl<const N: usize> FromIterator<u8> for StackString<N> {
     }
 }
 
-impl<const N: usize> FromIterator<char> for StackString<N> {
-    /// Creates a [`StackString`] from an iterator.
+impl<const N: usize> FromIterator<char> for ArrayString<N> {
+    /// Creates a [`ArrayString`] from an iterator.
     /// # Panics
-    /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
+    /// Panics if the iterator is longer than the internal buffer of the [`ArrayString`]
     fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> Self {
         let mut out = Self::default();
         for val in iter.into_iter() {
@@ -368,11 +368,11 @@ impl<const N: usize> FromIterator<char> for StackString<N> {
     }
 }
 
-impl<const N: usize> FromStr for StackString<N> {
+impl<const N: usize> FromStr for ArrayString<N> {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut out = StackString::default();
+        let mut out = ArrayString::default();
         // FromIterator impl panics. Use this instead.
         for b in s.bytes() {
             out.push(b)?
@@ -381,21 +381,21 @@ impl<const N: usize> FromStr for StackString<N> {
     }
 }
 
-impl<const N: usize> Deref for StackString<N> {
+impl<const N: usize> Deref for ArrayString<N> {
     type Target = str;
 
     /// Dereferences the stack string to a `&str`.
     /// # Panics
-    /// - If the [`StackString`] holds invalid Utf8.
+    /// - If the [`ArrayString`] holds invalid Utf8.
     fn deref(&self) -> &Self::Target {
         core::str::from_utf8(&self.buf[..self.len]).expect("Valid Utf8")
     }
 }
 
-impl<const N: usize> DerefMut for StackString<N> {
+impl<const N: usize> DerefMut for ArrayString<N> {
     /// Dereferences the stack string to a `&mut str`.
     /// # Panics
-    /// - If the [`StackString`] holds invalid Utf8.
+    /// - If the [`ArrayString`] holds invalid Utf8.
     fn deref_mut(&mut self) -> &mut Self::Target {
         core::str::from_utf8_mut(&mut self.buf[..self.len]).expect("Valid Utf8")
     }
@@ -461,19 +461,19 @@ mod test {
 
     #[test]
     fn parse_stack() {
-        let a: i32 = IterTokens::<_, StackString<10>>::into_tokens("-123456789🗻∈🌏".bytes())
+        let a: i32 = IterTokens::<_, ArrayString<10>>::into_tokens("-123456789🗻∈🌏".bytes())
             .as_buffered()
             .parse_n(10)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
-        let a: i32 = IterTokens::<_, StackString<20>>::into_tokens("-123456789🗻∈🌏".bytes())
+        let a: i32 = IterTokens::<_, ArrayString<20>>::into_tokens("-123456789🗻∈🌏".bytes())
             .as_buffered()
             .parse_n(10)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
-        let a: StackString<21> = "-123456789🗻∈🌏"
+        let a: ArrayString<21> = "-123456789🗻∈🌏"
             .into_tokens()
             .as_buffered()
             .parse_remaining()
@@ -484,7 +484,7 @@ mod test {
 
     #[test]
     fn parse_empty() {
-        assert!(IterTokens::<_, StackString<0>>::into_tokens("".bytes())
+        assert!(IterTokens::<_, ArrayString<0>>::into_tokens("".bytes())
             .as_buffered()
             .parse_remaining::<u8>()
             .is_none())
@@ -492,7 +492,7 @@ mod test {
 
     #[test]
     fn parse_fail() {
-        assert!(IterTokens::<_, StackString<3>>::into_tokens("256".bytes())
+        assert!(IterTokens::<_, ArrayString<3>>::into_tokens("256".bytes())
             .as_buffered()
             .parse_remaining::<u8>()
             .expect("NonEmpty")

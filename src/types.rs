@@ -387,7 +387,7 @@ with_context_impls!(WithContextMut &mut);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::buffered::StackString;
+    use crate::buffered::ArrayString;
 
     #[test]
     fn exotic_character_bounds() {
@@ -402,7 +402,7 @@ mod tests {
     fn iterator_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars = "hello \n\t world".chars();
-        let mut tokens = IterTokens::<_, StackString<0>>::into_tokens(chars);
+        let mut tokens = IterTokens::<_, ArrayString<0>>::into_tokens(chars);
 
         let loc = tokens.location();
         assert!(tokens.tokens("hello".chars()));
