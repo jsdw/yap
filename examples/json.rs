@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 use yap::{IntoTokens, TokenLocation, Tokens};
 
 /// An example JSON parser. We don't handle every case (ie proper float
@@ -111,7 +111,9 @@ impl ErrorKind {
 ///
 /// Try parsing each of the different types of value we know about,
 /// and return the first error that we encounter, or a valid `Value`.
-fn value(toks: &mut impl Tokens<Item = char>) -> Result<Value, Error> {
+fn value(
+    toks: &mut impl Tokens<Item = char, Buffer = impl Deref<Target = str>>,
+) -> Result<Value, Error> {
     // Return the first thing we parse successfully from our token stream,
     // mapping values into their `Value` container.
     let value = yap::one_of!(ts from toks;
@@ -137,7 +139,9 @@ fn value(toks: &mut impl Tokens<Item = char>) -> Result<Value, Error> {
 /// - `Some(Ok(values))` means we successfully parsed 0 or more array values.
 /// - `Some(Err(e))` means that we hit an error parsing the array.
 /// - `None` means that this wasn't an array and so nothing was parsed.
-fn array(toks: &mut impl Tokens<Item = char>) -> Option<Result<Vec<Value>, Error>> {
+fn array(
+    toks: &mut impl Tokens<Item = char, Buffer = impl Deref<Target = str>>,
+) -> Option<Result<Vec<Value>, Error>> {
     // Note the location of the start of the array.
     let start = toks.location();
 
@@ -167,7 +171,9 @@ fn array(toks: &mut impl Tokens<Item = char>) -> Option<Result<Vec<Value>, Error
 /// - `Some(Ok(values))` means we successfully parsed 0 or more object values.
 /// - `Some(Err(e))` means that we hit an error parsing the object.
 /// - `None` means that this wasn't an object and so nothing was parsed.
-fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, Value>, Error>> {
+fn object(
+    toks: &mut impl Tokens<Item = char, Buffer = impl Deref<Target = str>>,
+) -> Option<Result<HashMap<String, Value>, Error>> {
     // Note the location of the start of the object.
     let start = toks.location();
 
@@ -184,7 +190,7 @@ fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, 
 
     // If we hit any errors above, return it.
     let Ok(values) = values else {
-        return Some(values)
+        return Some(values);
     };
 
     skip_whitespace(&mut *toks);
@@ -201,7 +207,9 @@ fn object(toks: &mut impl Tokens<Item = char>) -> Option<Result<HashMap<String, 
 /// - `Some(Ok((key, val)))` means we parsed a keyval field pair.
 /// - `Some(Err(e))` means we hit some unrecoverable error.
 /// - `None` means we parsed nothing and hit the end of the object.
-fn object_field(toks: &mut impl Tokens<Item = char>) -> Option<Result<(String, Value), Error>> {
+fn object_field(
+    toks: &mut impl Tokens<Item = char, Buffer = impl Deref<Target = str>>,
+) -> Option<Result<(String, Value), Error>> {
     if toks.peek() == Some('}') {
         return None;
     }
@@ -302,7 +310,9 @@ fn null(toks: &mut impl Tokens<Item = char>) -> bool {
 /// over at once and parse them into a number.
 ///
 /// A better parser could return specific errors depending on where we failed in our parsing.
-fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
+fn number(
+    toks: &mut impl Tokens<Item = char, Buffer = impl Deref<Target = str>>,
+) -> Option<Result<f64, Error>> {
     let start = toks.location();
 
     // Look for the start of a number. return None if
@@ -344,7 +354,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
 
     // If we get this far, we saw a valid number. Just let Rust parse it for us..
     let end = toks.location();
-    let n_str: String = toks.slice(start, end).as_iter().collect();
+    let n_str = toks.get_buffer(start, end);
     Some(Ok(n_str.parse().expect("valid number expected here")))
 }
 
