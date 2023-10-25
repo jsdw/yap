@@ -5,6 +5,7 @@
 //! You should be able to remain generic by using `t: &mut impl Tokens<Item=char>` as a
 //! function argument instead of naming concrete types like the ones here.
 use super::{IntoTokens, TokenLocation, Tokens};
+use core::marker::PhantomData;
 
 /// This is what we are given back if we call `into_tokens()` on
 /// a `&[T]`. It implements the [`Tokens`] interface.
@@ -44,6 +45,7 @@ impl<'a, Item> From<SliceTokens<'a, Item>> for &'a [Item] {
 
 impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     type Item = &'a Item;
+    type Buffer<'buf> = &'buf [Item] where Self: 'buf;
     type Location = SliceTokensLocation;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -59,6 +61,9 @@ impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     }
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
+    }
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+        &self.slice[start.0..end.0]
     }
 }
 
@@ -119,6 +124,7 @@ impl<'a> From<StrTokens<'a>> for &'a str {
 
 impl<'a> Tokens for StrTokens<'a> {
     type Item = char;
+    type Buffer<'buf> = &'buf str where Self: 'buf;
     type Location = StrTokensLocation;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -155,6 +161,10 @@ impl<'a> Tokens for StrTokens<'a> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+        // Shouldn't panic if a location is derived from this StrTokens because all returned locations should be on valid char boundaries.
+        &self.str[start.0..end.0]
+    }
 }
 
 impl<'a> IntoTokens<char> for StrTokens<'a> {
@@ -176,19 +186,34 @@ impl<'a> IntoTokens<char> for &'a str {
 
 /// This is what we are given back if we call [`IterTokens::into_tokens(iter)`] on
 /// an `impl Iterator + Clone`. It implements the [`Tokens`] interface.
-#[derive(Clone)]
-pub struct IterTokens<I> {
+pub struct IterTokens<I, Buf> {
     iter: I,
     cursor: usize,
+    buffer_type: PhantomData<Buf>,
+}
+
+impl<I: Clone, Buf> Clone for IterTokens<I, Buf> {
+    fn clone(&self) -> Self {
+        Self {
+            iter: self.iter.clone(),
+            cursor: self.cursor,
+            buffer_type: PhantomData,
+        }
+    }
 }
 
 /// This implements [`TokenLocation`] and stores the location and state of
 /// our current cursor into some iterator. The location is equivalent to `offset`
 /// in [`Iterator::nth(offset)`].
-#[derive(Clone)]
-pub struct IterTokensLocation<I>(IterTokens<I>);
+pub struct IterTokensLocation<I, Buf>(IterTokens<I, Buf>);
 
-impl<I> core::fmt::Debug for IterTokensLocation<I> {
+impl<I: Clone, Buf> Clone for IterTokensLocation<I, Buf> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<I, Buf> core::fmt::Debug for IterTokensLocation<I, Buf> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "IterTokensLocation(cursor = {})", self.0.cursor)
     }
@@ -197,19 +222,23 @@ impl<I> core::fmt::Debug for IterTokensLocation<I> {
 // Locations match as long as the cursors do. This is as strong as the guarantee
 // for string or slice locations, and in all cases, locations from StrTokens/SliceTokens
 // may be equal even if the underlying tokens are different.
-impl<I> PartialEq for IterTokensLocation<I> {
+impl<I, Buf> PartialEq for IterTokensLocation<I, Buf> {
     fn eq(&self, other: &Self) -> bool {
         self.0.cursor == other.0.cursor
     }
 }
 
-impl<I> TokenLocation for IterTokensLocation<I> {
+impl<I, Buf> TokenLocation for IterTokensLocation<I, Buf> {
     fn offset(&self) -> usize {
         self.0.cursor
     }
 }
 
-impl<I: Iterator + Clone> IterTokens<I> {
+impl<I, Buf> IterTokens<I, Buf>
+where
+    I: Iterator + Clone,
+    Buf: FromIterator<I::Item>,
+{
     /// We can't define a blanket impl for [`IntoTokens`] on all `impl Iterator + Clone` without
     /// [specialization](https://rust-lang.github.io/rfcs/1210-impl-specialization.html).
     ///
@@ -223,8 +252,10 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// // In normal usage, "hello \n\t world".into_tokens()
     /// // would be preferred here (which would give StrTokens).
     /// // This is just to demonstrate using IterTokens:
+    /// // Note that the type of in-memory buffer to use with `Tokens::get_buffer` and `Tokens::as_buffered`
+    /// // has to be specified as a generic parameter.
     /// let chars_iter = "hello \n\t world".chars();
-    /// let mut tokens = IterTokens::into_tokens(chars_iter);
+    /// let mut tokens = IterTokens::<_, String>::into_tokens(chars_iter);
     ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
@@ -232,16 +263,22 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// assert!(tokens.tokens("world".chars()));
     /// ```
     pub fn into_tokens(iter: I) -> Self {
-        IterTokens { iter, cursor: 0 }
+        IterTokens {
+            iter,
+            cursor: 0,
+            buffer_type: PhantomData,
+        }
     }
 }
 
-impl<I> Tokens for IterTokens<I>
+impl<I, Buf> Tokens for IterTokens<I, Buf>
 where
     I: Iterator + Clone,
+    Buf: FromIterator<I::Item>,
 {
     type Item = I::Item;
-    type Location = IterTokensLocation<I>;
+    type Buffer<'buf> = Buf where Self: 'buf;
+    type Location = IterTokensLocation<I, Buf>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.cursor += 1;
@@ -256,11 +293,20 @@ where
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0.cursor
     }
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+        let original = self.location();
+        let delta = end.0.cursor - start.0.cursor;
+        self.set_location(start);
+        let res = self.as_iter().take(delta).collect();
+        self.set_location(original);
+        res
+    }
 }
 
-impl<I> IntoTokens<I::Item> for IterTokens<I>
+impl<I, Buf> IntoTokens<I::Item> for IterTokens<I, Buf>
 where
     I: Iterator + Clone,
+    Buf: FromIterator<I::Item>,
 {
     type Tokens = Self;
     fn into_tokens(self) -> Self {
@@ -313,6 +359,7 @@ macro_rules! with_context_impls {
         impl <T, C> Tokens for $name<$( $($mut)+ )? T, C>
         where T: Tokens {
             type Item = T::Item;
+            type Buffer<'buf> = T::Buffer<'buf> where Self: 'buf;
             type Location = T::Location;
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -327,6 +374,9 @@ macro_rules! with_context_impls {
             fn is_at_location(&self, location: &Self::Location) -> bool {
                 self.tokens.is_at_location(location)
             }
+            fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+                self.tokens.get_buffer(start, end)
+            }
         }
     }
 }
@@ -337,6 +387,7 @@ with_context_impls!(WithContextMut &mut);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::buffered::StackString;
 
     #[test]
     fn exotic_character_bounds() {
@@ -351,7 +402,7 @@ mod tests {
     fn iterator_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars = "hello \n\t world".chars();
-        let mut tokens = IterTokens::into_tokens(chars);
+        let mut tokens = IterTokens::<_, StackString<0>>::into_tokens(chars);
 
         let loc = tokens.location();
         assert!(tokens.tokens("hello".chars()));

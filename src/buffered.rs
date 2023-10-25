@@ -1,24 +1,22 @@
-//! Collecting tokens into temporary buffers.
+//! Manipulating tokens with in-memory buffers.
 
 use crate::Tokens;
 use core::{
-    array, iter,
-    marker::PhantomData,
+    array,
     ops::{Deref, DerefMut},
     str::FromStr,
 };
 
 /// This is returned from [`Tokens::as_buffered()`], and exposes methods
-/// requiring temporary allocations on our tokens.
-pub struct BufferedTokens<'a, T, Buf> {
+/// requiring in-memory buffers of our tokens.
+pub struct BufferedTokens<'a, T> {
     pub(crate) tokens: &'a mut T,
-    pub(crate) buf: PhantomData<Buf>,
 }
 
-impl<'a, T, Buf> BufferedTokens<'a, T, Buf>
+impl<'a, T> BufferedTokens<'a, T>
 where
     T: Tokens,
-    Buf: FromIterator<T::Item> + Deref<Target = str>,
+    for<'buf> T::Buffer<'buf>: Deref<Target = str>,
 {
     /// Use [`str::parse`] to parse the next `n` elements.
     /// [`None`] if this is 0 elements.
@@ -27,7 +25,7 @@ where
     /// use yap::{Tokens, IntoTokens, buffered::StackString};
     ///
     /// let mut tokens = "123abc456".into_tokens();
-    /// let mut buffered = tokens.as_buffered::<StackString<3>>();
+    /// let mut buffered = tokens.as_buffered();
     ///
     /// assert_eq!(
     ///     buffered
@@ -55,7 +53,10 @@ where
     where
         O: FromStr,
     {
-        let to_parse = self.tokens.as_iter().take(n).collect::<Buf>();
+        let start = self.tokens.location();
+        self.tokens.as_iter().take(n).for_each(drop);
+        let end = self.tokens.location();
+        let to_parse = self.tokens.get_buffer(start, end);
         (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
     }
 
@@ -69,7 +70,7 @@ where
     ///
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .parse_remaining::<u16>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -81,7 +82,10 @@ where
     where
         O: FromStr,
     {
-        let to_parse = self.tokens.as_iter().collect::<Buf>();
+        let start = self.tokens.location();
+        self.tokens.as_iter().for_each(drop);
+        let end = self.tokens.location();
+        let to_parse = self.tokens.get_buffer(start, end);
         (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
     }
 
@@ -89,10 +93,10 @@ where
     /// [`None`] if this is 0 elements.
     /// # Example
     /// ```
-    /// use yap::{buffered::StackString, IntoTokens, Tokens};
+    /// use yap::{IntoTokens, Tokens};
     ///
     /// let mut tokens = "123456".into_tokens();
-    /// let mut buffered = tokens.as_buffered::<StackString<5>>();
+    /// let mut buffered = tokens.as_buffered();
     ///
     /// assert_eq!(
     ///     buffered
@@ -114,15 +118,18 @@ where
         O: FromStr,
         F: FnMut(&T::Item) -> bool,
     {
-        let to_parse = self.tokens.tokens_while(take_while).collect::<Buf>();
+        let start = self.tokens.location();
+        self.tokens.tokens_while(take_while).for_each(drop);
+        let end = self.tokens.location();
+        let to_parse = self.tokens.get_buffer(start, end);
         (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
     }
 }
 
-impl<'a, T, Buf> BufferedTokens<'a, T, Buf>
+impl<'a, T> BufferedTokens<'a, T>
 where
     T: Tokens<Item = char>,
-    Buf: FromIterator<T::Item> + Deref<Target = str>,
+    for<'buf> T::Buffer<'buf>: Deref<Target = str>,
 {
     /// Parse next chunk of digits.
     /// # Example
@@ -132,7 +139,7 @@ where
     /// let mut tokens = "123456".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .digit::<u32>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -154,7 +161,7 @@ where
     /// let mut tokens = "+123456".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .signed_digit::<i32>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -164,7 +171,7 @@ where
     /// let mut tokens = "-123456".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .signed_digit::<i32>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -175,17 +182,17 @@ where
     where
         O: FromStr,
     {
-        let loc = self.tokens.location();
+        let start = self.tokens.location();
         let sign = self.tokens.next()?;
         match sign {
             '+' | '-' => {
-                let to_parse = iter::once(sign)
-                    .chain(self.tokens.tokens_while(|&t| t.is_numeric()))
-                    .collect::<Buf>();
+                self.tokens.tokens_while(|&t| t.is_numeric()).for_each(drop);
+                let end = self.tokens.location();
+                let to_parse = self.tokens.get_buffer(start, end);
                 (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
             }
             _ => {
-                self.tokens.set_location(loc);
+                self.tokens.set_location(start);
                 None
             }
         }
@@ -224,7 +231,7 @@ where
     ///
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .alpha::<AB>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -274,7 +281,7 @@ where
     ///
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
+    ///         .as_buffered()
     ///         .alphanumeric::<ABNum>()
     ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
@@ -404,13 +411,13 @@ mod test {
     fn parse_string() {
         let a: String = "123🗻∈🌏"
             .into_tokens()
-            .as_buffered::<String>()
+            .as_buffered()
             .parse_remaining()
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, "123🗻∈🌏");
-        let a: String = IterTokens::into_tokens("123🗻∈🌏".chars())
-            .as_buffered::<StackString<14>>()
+        let a: String = IterTokens::<_, String>::into_tokens("123🗻∈🌏".chars())
+            .as_buffered()
             .parse_remaining()
             .expect("NonEmpty")
             .expect("Parse success");
@@ -418,10 +425,9 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "std")]
     fn parse_unsigned() {
         let a: u8 = ("123🗻∈🌏".into_tokens())
-            .as_buffered::<String>()
+            .as_buffered()
             .digit()
             .expect("NonEmpty")
             .expect("Parse success");
@@ -429,25 +435,24 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "std")]
     fn parse_signed() {
         let a: u8 = "+123"
             .into_tokens()
-            .as_buffered::<String>()
+            .as_buffered()
             .parse_n(3)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, 12);
         let a: i8 = "+123"
             .into_tokens()
-            .as_buffered::<String>()
+            .as_buffered()
             .parse_n(3)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, 12);
         let a: i8 = "-123"
             .into_tokens()
-            .as_buffered::<StackString<4>>()
+            .as_buffered()
             .signed_digit()
             .expect("NonEmpty")
             .expect("Parse success");
@@ -456,21 +461,21 @@ mod test {
 
     #[test]
     fn parse_stack() {
-        let a: i32 = IterTokens::into_tokens("-123456789🗻∈🌏".bytes())
-            .as_buffered::<StackString<10>>()
+        let a: i32 = IterTokens::<_, StackString<10>>::into_tokens("-123456789🗻∈🌏".bytes())
+            .as_buffered()
             .parse_n(10)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
-        let a: i32 = IterTokens::into_tokens("-123456789🗻∈🌏".bytes())
-            .as_buffered::<StackString<20>>()
+        let a: i32 = IterTokens::<_, StackString<20>>::into_tokens("-123456789🗻∈🌏".bytes())
+            .as_buffered()
             .parse_n(10)
             .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
         let a: StackString<21> = "-123456789🗻∈🌏"
             .into_tokens()
-            .as_buffered::<StackString<21>>()
+            .as_buffered()
             .parse_remaining()
             .expect("NonEmpty")
             .expect("Parse success");
@@ -479,16 +484,16 @@ mod test {
 
     #[test]
     fn parse_empty() {
-        assert!(IterTokens::into_tokens("".bytes())
-            .as_buffered::<StackString<0>>()
+        assert!(IterTokens::<_, StackString<0>>::into_tokens("".bytes())
+            .as_buffered()
             .parse_remaining::<u8>()
             .is_none())
     }
 
     #[test]
     fn parse_fail() {
-        assert!(IterTokens::into_tokens("256".bytes())
-            .as_buffered::<StackString<3>>()
+        assert!(IterTokens::<_, StackString<3>>::into_tokens("256".bytes())
+            .as_buffered()
             .parse_remaining::<u8>()
             .expect("NonEmpty")
             .is_err())

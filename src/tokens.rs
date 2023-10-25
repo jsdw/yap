@@ -12,7 +12,7 @@ mod sep_by_err;
 mod slice;
 mod tokens_while;
 
-use core::{borrow::Borrow, marker::PhantomData};
+use core::borrow::Borrow;
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -36,6 +36,11 @@ use crate::{
 pub trait Tokens: Sized {
     /// The item returned from [`Tokens::next()`].
     type Item;
+
+    /// The type returned from [`Tokens::get_buffer()`]
+    type Buffer<'buf>
+    where
+        Self: 'buf;
 
     /// An object which can be used to reset the token stream
     /// to some position.
@@ -108,6 +113,13 @@ pub trait Tokens: Sized {
     /// ```
     fn is_at_location(&self, location: &Self::Location) -> bool;
 
+    /// Returns an in-memory representation of all tokens from `start..end`.
+    ///
+    /// [`Tokens`] implementations that already have in-memory representation of the tokens should return references to that without copying.
+    ///
+    /// [`Tokens`] implementations that don't have in-memory representations of the tokens may need to copy or allocate.
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_>;
+
     /// Return an iterator over our tokens. The [`Tokens`] trait already mirrors the [`Iterator`]
     /// interface by providing [`Tokens::Item`] and [`Tokens::next()`], but we allow the [`Iterator`]
     /// methods to be kept separate to avoid collisions, and because some iterator methods don't
@@ -116,15 +128,10 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating to a buffer.
-    /// It is generic over the buffer so one can use a heap allocated type (ex. [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html))
-    /// or a stack allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html) or [`crate::buffered::StackString`]).
-    /// If a buffer of tokens is needed directly use `tokens.as_iter().collect()`.
-    fn as_buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
-        BufferedTokens {
-            tokens: self,
-            buf: PhantomData,
-        }
+    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require an in-memory buffer of our tokens.
+    /// If a buffer of tokens is needed directly use [`Tokens::get_buffer`].
+    fn as_buffered(&'_ mut self) -> BufferedTokens<'_, Self> {
+        BufferedTokens { tokens: self }
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
