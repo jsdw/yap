@@ -29,7 +29,7 @@ impl<'a, T: Tokens> Slice<'a, T> {
 // We can also treat this slice of tokens as tokens, too:
 impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     type Item = T::Item;
-    type Buffer<'buf> = T::Buffer<'buf> where Self: 'buf;
+    type Buffer = T::Buffer;
     type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -56,7 +56,7 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.tokens.is_at_location(location)
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         self.tokens.get_buffer(start, end)
     }
 }

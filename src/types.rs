@@ -45,7 +45,7 @@ impl<'a, Item> From<SliceTokens<'a, Item>> for &'a [Item] {
 
 impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     type Item = &'a Item;
-    type Buffer<'buf> = &'buf [Item] where Self: 'buf;
+    type Buffer = &'a [Item];
     type Location = SliceTokensLocation;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -62,7 +62,7 @@ impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         &self.slice[start.0..end.0]
     }
 }
@@ -124,7 +124,7 @@ impl<'a> From<StrTokens<'a>> for &'a str {
 
 impl<'a> Tokens for StrTokens<'a> {
     type Item = char;
-    type Buffer<'buf> = &'buf str where Self: 'buf;
+    type Buffer = &'a str;
     type Location = StrTokensLocation;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -161,7 +161,7 @@ impl<'a> Tokens for StrTokens<'a> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         // Shouldn't panic if a location is derived from this StrTokens because all returned locations should be on valid char boundaries.
         &self.str[start.0..end.0]
     }
@@ -277,7 +277,7 @@ where
     Buf: FromIterator<I::Item>,
 {
     type Item = I::Item;
-    type Buffer<'buf> = Buf where Self: 'buf;
+    type Buffer = Buf;
     type Location = IterTokensLocation<I, Buf>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -293,7 +293,7 @@ where
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0.cursor
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         let original = self.location();
         let delta = end.0.cursor - start.0.cursor;
         self.set_location(start);
@@ -359,7 +359,7 @@ macro_rules! with_context_impls {
         impl <T, C> Tokens for $name<$( $($mut)+ )? T, C>
         where T: Tokens {
             type Item = T::Item;
-            type Buffer<'buf> = T::Buffer<'buf> where Self: 'buf;
+            type Buffer = T::Buffer;
             type Location = T::Location;
 
             fn next(&mut self) -> Option<Self::Item> {
@@ -374,7 +374,7 @@ macro_rules! with_context_impls {
             fn is_at_location(&self, location: &Self::Location) -> bool {
                 self.tokens.is_at_location(location)
             }
-            fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_> {
+            fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
                 self.tokens.get_buffer(start, end)
             }
         }

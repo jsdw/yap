@@ -16,7 +16,7 @@ pub struct BufferedTokens<'a, T> {
 impl<'a, T> BufferedTokens<'a, T>
 where
     T: Tokens,
-    for<'buf> T::Buffer<'buf>: Deref<Target = str>,
+    T::Buffer: Deref<Target = str>,
 {
     /// Use [`str::parse`] to parse the next `n` elements.
     /// [`None`] if this is 0 elements.
@@ -129,7 +129,7 @@ where
 impl<'a, T> BufferedTokens<'a, T>
 where
     T: Tokens<Item = char>,
-    for<'buf> T::Buffer<'buf>: Deref<Target = str>,
+    T::Buffer: Deref<Target = str>,
 {
     /// Parse next chunk of digits.
     /// # Example

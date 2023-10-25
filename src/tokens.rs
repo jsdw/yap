@@ -38,9 +38,7 @@ pub trait Tokens: Sized {
     type Item;
 
     /// The type returned from [`Tokens::get_buffer()`]
-    type Buffer<'buf>
-    where
-        Self: 'buf;
+    type Buffer;
 
     /// An object which can be used to reset the token stream
     /// to some position.
@@ -118,7 +116,7 @@ pub trait Tokens: Sized {
     /// [`Tokens`] implementations that already have in-memory representation of the tokens should return references to that without copying.
     ///
     /// [`Tokens`] implementations that don't have in-memory representations of the tokens may need to copy or allocate.
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer<'_>;
+    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer;
 
     /// Return an iterator over our tokens. The [`Tokens`] trait already mirrors the [`Iterator`]
     /// interface by providing [`Tokens::Item`] and [`Tokens::next()`], but we allow the [`Iterator`]
