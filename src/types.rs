@@ -62,7 +62,7 @@ impl<'a, Item> Tokens for SliceTokens<'a, Item> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
+    fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         &self.slice[start.0..end.0]
     }
 }
@@ -161,7 +161,7 @@ impl<'a> Tokens for StrTokens<'a> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
+    fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         // Shouldn't panic if a location is derived from this StrTokens because all returned locations should be on valid char boundaries.
         &self.str[start.0..end.0]
     }
@@ -293,7 +293,7 @@ where
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0.cursor
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
+    fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         let original = self.location();
         let delta = end.0.cursor - start.0.cursor;
         self.set_location(start);
@@ -374,7 +374,7 @@ macro_rules! with_context_impls {
             fn is_at_location(&self, location: &Self::Location) -> bool {
                 self.tokens.is_at_location(location)
             }
-            fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
+            fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
                 self.tokens.get_buffer(start, end)
             }
         }

@@ -56,7 +56,7 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.tokens.is_at_location(location)
     }
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
+    fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer {
         self.tokens.get_buffer(start, end)
     }
 }

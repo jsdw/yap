@@ -116,19 +116,19 @@ pub trait Tokens: Sized {
     /// [`Tokens`] implementations that already have in-memory representation of the tokens should return references to that without copying.
     ///
     /// [`Tokens`] implementations that don't have in-memory representations of the tokens may need to copy or allocate.
-    fn get_buffer(&'_ mut self, start: Self::Location, end: Self::Location) -> Self::Buffer;
+    fn get_buffer(&mut self, start: Self::Location, end: Self::Location) -> Self::Buffer;
 
     /// Return an iterator over our tokens. The [`Tokens`] trait already mirrors the [`Iterator`]
     /// interface by providing [`Tokens::Item`] and [`Tokens::next()`], but we allow the [`Iterator`]
     /// methods to be kept separate to avoid collisions, and because some iterator methods don't
     /// consume tokens as you might expect, and so must be used with care when parsing input.
-    fn as_iter(&'_ mut self) -> TokensIter<'_, Self> {
+    fn as_iter(&mut self) -> TokensIter<'_, Self> {
         TokensIter { tokens: self }
     }
 
     /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require an in-memory buffer of our tokens.
     /// If a buffer of tokens is needed directly use [`Tokens::get_buffer`].
-    fn as_buffered(&'_ mut self) -> BufferedTokens<'_, Self> {
+    fn as_buffered(&mut self) -> BufferedTokens<'_, Self> {
         BufferedTokens { tokens: self }
     }
 
@@ -249,7 +249,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.next(), Some('o'));
     /// assert_eq!(s.next(), Some('p'));
     /// ```
-    fn slice(&'_ mut self, from: Self::Location, to: Self::Location) -> Slice<'_, Self> {
+    fn slice(&mut self, from: Self::Location, to: Self::Location) -> Slice<'_, Self> {
         Slice::new(self, self.location(), from, to)
     }
 
@@ -435,7 +435,7 @@ pub trait Tokens: Sized {
     /// // whereas `tokens_while` did not:
     /// assert_eq!(s.remaining(), "bc");
     /// ```
-    fn tokens_while<F>(&'_ mut self, f: F) -> TokensWhile<'_, Self, F>
+    fn tokens_while<F>(&mut self, f: F) -> TokensWhile<'_, Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
     {
@@ -522,7 +522,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(digits_iter.next(), None);
     /// assert_eq!(s.remaining(), "5abcde");
     /// ```
-    fn many_err<F, Output, E>(&'_ mut self, parser: F) -> ManyErr<'_, Self, F>
+    fn many_err<F, Output, E>(&mut self, parser: F) -> ManyErr<'_, Self, F>
     where
         F: FnMut(&mut Self) -> Result<Output, E>,
     {
@@ -627,7 +627,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(digits, vec![1,2,3,4]);
     /// assert_eq!(s.remaining(), ",abc");
     /// ```
-    fn sep_by<F, S, Output>(&'_ mut self, parser: F, separator: S) -> SepBy<'_, Self, F, S>
+    fn sep_by<F, S, Output>(&mut self, parser: F, separator: S) -> SepBy<'_, Self, F, S>
     where
         F: FnMut(&mut Self) -> Option<Output>,
         S: FnMut(&mut Self) -> bool,
@@ -661,11 +661,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(digits_iter.next(), None);
     /// assert_eq!(s.remaining(), ",a,1,2,3");
     /// ```
-    fn sep_by_err<F, S, E, Output>(
-        &'_ mut self,
-        parser: F,
-        separator: S,
-    ) -> SepByErr<'_, Self, F, S>
+    fn sep_by_err<F, S, E, Output>(&mut self, parser: F, separator: S) -> SepByErr<'_, Self, F, S>
     where
         F: FnMut(&mut Self) -> Result<Output, E>,
         S: FnMut(&mut Self) -> bool,
@@ -720,7 +716,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "+abc");
     /// ```
     fn sep_by_all<F, S, Output>(
-        &'_ mut self,
+        &mut self,
         parser: F,
         separator: S,
     ) -> SepByAll<'_, Self, F, S, Output>
@@ -779,7 +775,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "+abc");
     /// ```
     fn sep_by_all_err<F, S, Output, E>(
-        &'_ mut self,
+        &mut self,
         parser: F,
         separator: S,
     ) -> SepByAllErr<'_, Self, F, S, Output>
