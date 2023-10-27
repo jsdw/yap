@@ -126,7 +126,7 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require an in-memory buffer of our tokens.
+    /// Return a [`BufferedTokens`] over our tokens. This exposes methods that require an in-memory buffer of our tokens.
     /// If a buffer of tokens is needed directly use [`Tokens::get_buffer`].
     fn as_buffered(&mut self) -> BufferedTokens<'_, Self> {
         BufferedTokens { tokens: self }
