@@ -1055,7 +1055,7 @@ mod test {
     fn test_many() {
         // No input:
         let mut t = "".into_tokens();
-        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let abs: Vec<_> = t.many(parse_ab).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs.len(), 0);
@@ -1063,7 +1063,7 @@ mod test {
 
         // Invalid input after half is consumed:
         let mut t = "acabab".into_tokens();
-        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let abs: Vec<_> = t.many(parse_ab).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs.len(), 0);
@@ -1071,7 +1071,7 @@ mod test {
 
         // 3 valid and then 1 half-invalid:
         let mut t = "abababaa".into_tokens();
-        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let abs: Vec<_> = t.many(parse_ab).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs.len(), 3);
@@ -1079,7 +1079,7 @@ mod test {
 
         // End of tokens before can parse the fourth:
         let mut t = "abababa".into_tokens();
-        let abs: Vec<_> = t.many(|t| parse_ab(t)).collect();
+        let abs: Vec<_> = t.many(parse_ab).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs.len(), 3);
@@ -1091,7 +1091,7 @@ mod test {
     fn test_many_err() {
         // No input:
         let mut t = "".into_tokens();
-        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let abs: Vec<_> = t.many_err(parse_ab_err).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs, vec![Err(ABErr::NotEnoughTokens)]);
@@ -1099,7 +1099,7 @@ mod test {
 
         // Invalid input immediately:
         let mut t = "ccabab".into_tokens();
-        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let abs: Vec<_> = t.many_err(parse_ab_err).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs, vec![Err(ABErr::IsNotA)]);
@@ -1107,7 +1107,7 @@ mod test {
 
         // Invalid input after half is consumed:
         let mut t = "acabab".into_tokens();
-        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let abs: Vec<_> = t.many_err(parse_ab_err).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs, vec![Err(ABErr::IsNotB)]);
@@ -1115,7 +1115,7 @@ mod test {
 
         // 3 valid and then 1 half-invalid:
         let mut t = "abababaa".into_tokens();
-        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let abs: Vec<_> = t.many_err(parse_ab_err).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(abs, vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::IsNotB)]);
@@ -1123,7 +1123,7 @@ mod test {
 
         // End of tokens before can parse the fourth:
         let mut t = "abababa".into_tokens();
-        let abs: Vec<_> = t.many_err(|t| parse_ab_err(t)).collect();
+        let abs: Vec<_> = t.many_err(parse_ab_err).collect();
         let rest: Vec<char> = t.as_iter().collect();
 
         assert_eq!(
@@ -1157,25 +1157,25 @@ mod test {
     #[test]
     fn test_skip_many1() {
         let mut t = "".into_tokens();
-        let res = t.skip_many1(|t| parse_ab_err(t));
+        let res = t.skip_many1(parse_ab_err);
         let rest: String = t.as_iter().collect();
         assert_eq!(res, Err(ABErr::NotEnoughTokens));
         assert_eq!(&*rest, "");
 
         let mut t = "acabab".into_tokens();
-        let res = t.skip_many1(|t| parse_ab_err(t));
+        let res = t.skip_many1(parse_ab_err);
         let rest: String = t.as_iter().collect();
         assert_eq!(res, Err(ABErr::IsNotB));
         assert_eq!(&*rest, "acabab");
 
         let mut t = "abcbab".into_tokens();
-        let res = t.skip_many1(|t| parse_ab_err(t));
+        let res = t.skip_many1(parse_ab_err);
         let rest: String = t.as_iter().collect();
         assert_eq!(res, Ok(1));
         assert_eq!(&*rest, "cbab");
 
         let mut t = "ababcbab".into_tokens();
-        let res = t.skip_many1(|t| parse_ab_err(t));
+        let res = t.skip_many1(parse_ab_err);
         let rest: String = t.as_iter().collect();
         assert_eq!(res, Ok(2));
         assert_eq!(&*rest, "cbab");
