@@ -209,11 +209,11 @@ impl<I> TokenLocation for IterTokensLocation<I> {
     }
 }
 
-impl<I: Iterator + Clone> IterTokens<I> {
+impl<I> IterTokens<I> {
     /// We can't define a blanket impl for [`IntoTokens`] on all `impl Iterator + Clone` without
     /// [specialization](https://rust-lang.github.io/rfcs/1210-impl-specialization.html).
     ///
-    /// Instead, use this method to convert a suitable iterator into [`Tokens`].
+    /// Instead, you must manually construct new [`IterTokens`] using this function.
     ///
     /// # Example
     ///
@@ -224,15 +224,20 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// // would be preferred here (which would give StrTokens).
     /// // This is just to demonstrate using IterTokens:
     /// let chars_iter = "hello \n\t world".chars();
-    /// let mut tokens = IterTokens::into_tokens(chars_iter);
+    /// let mut tokens = IterTokens::new(chars_iter);
     ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
     /// tokens.skip_tokens_while(|c| c.is_whitespace());
     /// assert!(tokens.tokens("world".chars()));
     /// ```
-    pub fn into_tokens(iter: I) -> Self {
+    pub fn new(iter: I) -> Self {
         IterTokens { iter, cursor: 0 }
+    }
+
+    /// Return the inner iterator, consuming self.
+    pub fn into_inner(self) -> I {
+        self.iter
     }
 }
 
@@ -351,7 +356,7 @@ mod tests {
     fn iterator_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars = "hello \n\t world".chars();
-        let mut tokens = IterTokens::into_tokens(chars);
+        let mut tokens = IterTokens::new(chars);
 
         let loc = tokens.location();
         assert!(tokens.tokens("hello".chars()));

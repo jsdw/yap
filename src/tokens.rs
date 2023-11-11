@@ -12,7 +12,7 @@ mod sep_by_err;
 mod slice;
 mod tokens_while;
 
-use core::{borrow::Borrow, marker::PhantomData};
+use core::borrow::Borrow;
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -116,15 +116,14 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating to a buffer.
-    /// It is generic over the buffer so one can use a heap allocated type (ex. [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html))
-    /// or a stack allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html) or [`crate::buffered::StackString`]).
-    /// If a buffer of tokens is needed directly use `tokens.as_iter().collect()`.
-    fn as_buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
-        BufferedTokens {
-            tokens: self,
-            buf: PhantomData,
-        }
+    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating
+    /// to a buffer. It is generic over the buffer so one can use a heap allocated type (ex.
+    /// [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html)) or a stack
+    /// allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html)
+    /// or [`crate::buffered::StackString`]). If a buffer of tokens is needed directly use
+    /// `tokens.as_iter().collect()`.
+    fn buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
+        BufferedTokens::new(self)
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -913,7 +912,9 @@ pub trait Tokens: Sized {
         }
     }
 
-    /// Parses a line ending of either `\n` (like on linux)  or `\r\n` (like on windows)
+    /// Parses a line ending of either `\n` (like on linux)  or `\r\n` (like on windows).
+    /// Returns a static string equal to the line ending parsed, or `None` if no line
+    /// ending is seen at this location.
     fn line_ending(&mut self) -> Option<&'static str>
     where
         Self: Tokens<Item = char>,
@@ -922,17 +923,36 @@ pub trait Tokens: Sized {
             .or_else(|| self.optional(|t| t.tokens("\r\n".chars()).then_some("\r\n")))
     }
 
-    /// Checks next input is [`None`] and if true consumes the `None`.
+    /// Checks next input is [`None`] and, if true, consumes the `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::Tokens;
+    /// use yap::types::IterTokens;
+    /// use core::iter;
+    ///
+    /// // This will always return None; eof will consume it.
+    /// let mut toks = IterTokens::new(iter::empty::<char>());
+    ///
+    /// assert_eq!(toks.eof(), true);
+    /// assert_eq!(toks.offset(), 1);
+    ///
+    /// assert_eq!(toks.eof(), true);
+    /// assert_eq!(toks.offset(), 2);
+    ///
+    /// // This will return a char; eof won't consume anything.
+    /// let mut toks = IterTokens::new(iter::once('a'));
+    ///
+    /// assert_eq!(toks.eof(), false);
+    /// assert_eq!(toks.offset(), 0);
+    ///
+    /// assert_eq!(toks.eof(), false);
+    /// assert_eq!(toks.offset(), 0);
+    /// ```
     fn eof(&mut self) -> bool {
-        let loc = self.location();
-        // Check nothing comes after
-        match self.next() {
-            None => true,
-            Some(_) => {
-                self.set_location(loc);
-                false
-            }
-        }
+        self.optional(|t| t.next().is_none().then_some(()))
+            .is_some()
     }
 }
 

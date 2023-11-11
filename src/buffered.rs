@@ -2,7 +2,7 @@
 
 use crate::Tokens;
 use core::{
-    array, iter,
+    array,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     str::FromStr,
@@ -11,8 +11,17 @@ use core::{
 /// This is returned from [`Tokens::as_buffered()`], and exposes methods
 /// requiring temporary allocations on our tokens.
 pub struct BufferedTokens<'a, T, Buf> {
-    pub(crate) tokens: &'a mut T,
-    pub(crate) buf: PhantomData<Buf>,
+    tokens: &'a mut T,
+    buf: PhantomData<Buf>,
+}
+
+impl<'a, T, Buf> BufferedTokens<'a, T, Buf> {
+    pub(crate) fn new(tokens: &'a mut T) -> Self {
+        BufferedTokens {
+            tokens,
+            buf: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<'a, T, Buf> BufferedTokens<'a, T, Buf>
@@ -20,48 +29,49 @@ where
     T: Tokens,
     Buf: FromIterator<T::Item> + Deref<Target = str>,
 {
-    /// Use [`str::parse`] to parse the next `n` elements.
-    /// [`None`] if this is 0 elements.
+    /// This uses [`std::str::parse`] to parse the next `n` elements.
+    ///
     /// # Example
+    ///
     /// ```
     /// use yap::{Tokens, IntoTokens, buffered::StackString};
     ///
-    /// let mut tokens = "123abc456".into_tokens();
-    /// let mut buffered = tokens.as_buffered::<StackString<3>>();
+    /// let mut tokens = "123abc456def".into_tokens();
+    /// let mut buffered = tokens.buffered::<StackString<3>>();
     ///
     /// assert_eq!(
     ///     buffered
     ///         .parse_n::<u8>(3)
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     123
     /// );
     /// assert_eq!(
     ///     buffered
     ///         .parse_n::<String>(3)
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     "abc"
     /// );
     /// assert_eq!(
     ///     buffered
     ///         .parse_n::<u16>(3)
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     456
     /// );
+    /// assert_eq!(tokens.remaining(), "def");
     /// ```
-    pub fn parse_n<O>(&mut self, n: usize) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn parse_n<O>(&mut self, n: usize) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
-        let to_parse = self.tokens.as_iter().take(n).collect::<Buf>();
-        (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
+        let buf = self.tokens.as_iter().take(n).collect::<Buf>();
+        buf.parse::<O>()
     }
 
-    /// Use [`str::parse`] to parse the remaining elements until the next [`None`].
-    /// [`None`] if this is 0 elements.
+    /// This uses [`std::str::parse`] to parse the remaining elements
+    /// until [`None`] is returned from the token iterator.
+    ///
     /// # Example
+    ///
     /// ```
     /// use yap::{Tokens, IntoTokens};
     ///
@@ -69,53 +79,52 @@ where
     ///
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
+    ///         .buffered::<String>()
     ///         .parse_remaining::<u16>()
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     65535
     /// );
     /// assert!(tokens.eof())
     /// ```
-    pub fn parse_remaining<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn parse_remaining<O>(&mut self) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
-        let to_parse = self.tokens.as_iter().collect::<Buf>();
-        (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
+        let buf = self.tokens.as_iter().collect::<Buf>();
+        buf.parse::<O>()
     }
 
-    /// Use [`str::parse`] to parse the next chunk of input matching a predicate.
-    /// [`None`] if this is 0 elements.
+    /// This uses [`str::parse`] to parse the next chunk of input that matches
+    /// the given predicate.
+    ///
     /// # Example
+    ///
     /// ```
     /// use yap::{buffered::StackString, IntoTokens, Tokens};
     ///
     /// let mut tokens = "123456".into_tokens();
-    /// let mut buffered = tokens.as_buffered::<StackString<5>>();
+    /// let mut buffered = tokens.buffered::<StackString<5>>();
     ///
     /// assert_eq!(
     ///     buffered
     ///         .parse_while::<u16, _>(|&t| t.to_digit(10).unwrap() < 6)
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     12345
     /// );
     /// assert_eq!(
     ///     buffered
     ///         .parse_while::<u8, _>(|&t| t.to_digit(10).unwrap() == 6)
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     6
     /// );
     /// ```
-    pub fn parse_while<O, F>(&mut self, take_while: F) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn parse_while<O, F>(&mut self, take_while: F) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
         F: FnMut(&T::Item) -> bool,
     {
-        let to_parse = self.tokens.tokens_while(take_while).collect::<Buf>();
-        (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
+        let buf = self.tokens.tokens_while(take_while).collect::<Buf>();
+        buf.parse::<O>()
     }
 }
 
@@ -124,80 +133,80 @@ where
     T: Tokens<Item = char>,
     Buf: FromIterator<T::Item> + Deref<Target = str>,
 {
-    /// Parse next chunk of digits.
+    /// Parse the next chunk of digits into the given type.
+    ///
     /// # Example
+    ///
     /// ```
     /// use yap::{Tokens, IntoTokens};
     ///
     /// let mut tokens = "123456".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
-    ///         .digit::<u32>()
-    ///         .expect("NonEmpty")
+    ///         .buffered::<String>()
+    ///         .digits::<u32>()
     ///         .expect("Parse success"),
     ///     123456
     /// );
     /// ```
-    pub fn digit<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn digits<O>(&mut self) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
         self.parse_while(|t| t.is_numeric())
     }
 
-    /// Parses next chunk of digits with a sign (`+`/`-`) in front.
+    /// Parses the next chunk of digits with a sign (`+`/`-`) in front
+    /// into the given type.
+    ///
     /// # Example
+    ///
     /// ```
     /// use yap::{Tokens, IntoTokens};
     ///
-    /// let mut tokens = "+123456".into_tokens();
+    /// let mut tokens = "+123456abc".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
-    ///         .signed_digit::<i32>()
-    ///         .expect("NonEmpty")
+    ///         .buffered::<String>()
+    ///         .signed_digits::<i32>()
     ///         .expect("Parse success"),
     ///     123456
     /// );
+    /// assert_eq!(tokens.remaining(), "abc");
     ///
-    /// let mut tokens = "-123456".into_tokens();
+    /// let mut tokens = "-123456abc".into_tokens();
     ///
     /// assert_eq!(tokens
-    ///         .as_buffered::<String>()
-    ///         .signed_digit::<i32>()
-    ///         .expect("NonEmpty")
+    ///         .buffered::<String>()
+    ///         .signed_digits::<i32>()
     ///         .expect("Parse success"),
     ///     -123456
     /// );
+    /// assert_eq!(tokens.remaining(), "abc");
     /// ```
-    pub fn signed_digit<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn signed_digits<O>(&mut self) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
-        let loc = self.tokens.location();
-        let sign = self.tokens.next()?;
-        match sign {
-            '+' | '-' => {
-                let to_parse = iter::once(sign)
-                    .chain(self.tokens.tokens_while(|&t| t.is_numeric()))
-                    .collect::<Buf>();
-                (!to_parse.is_empty()).then(|| to_parse.parse::<O>())
-            }
-            _ => {
-                self.tokens.set_location(loc);
-                None
-            }
-        }
+        let mut first_char_seen = false;
+        self.parse_while(|t| {
+            let keep_tok = if first_char_seen {
+                t.is_numeric()
+            } else {
+                t == &'-' || t == &'+'
+            };
+            first_char_seen = true;
+            keep_tok
+        })
     }
 
     /// Parses next chunk of alphabetical characters.
+    ///
     /// # Example
+    ///
     /// ```
     /// use core::str::FromStr;
     /// use yap::{Tokens, IntoTokens};
-    ///
-    /// let mut tokens = "aab123".into_tokens();
     ///
     /// #[derive(Debug, PartialEq)]
     /// struct AB {
@@ -222,16 +231,17 @@ where
     ///     }
     /// }
     ///
+    /// let mut tokens = "aaabb123".into_tokens();
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
-    ///         .alpha::<AB>()
-    ///         .expect("NonEmpty")
+    ///         .buffered::<String>()
+    ///         .alphabetic::<AB>()
     ///         .expect("Parse success"),
-    ///     AB { a: 2, b: 1 }
+    ///     AB { a: 3, b: 2 }
     /// );
+    /// assert_eq!(tokens.remaining(), "123");
     /// ```
-    pub fn alpha<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn alphabetic<O>(&mut self) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
@@ -239,7 +249,9 @@ where
     }
 
     /// Parses next chunk of alphanumeric characters.
+    ///
     /// # Example
+    ///
     /// ```
     /// use core::str::FromStr;
     /// use yap::{Tokens, IntoTokens};
@@ -274,14 +286,13 @@ where
     ///
     /// assert_eq!(
     ///     tokens
-    ///         .as_buffered::<String>()
+    ///         .buffered::<String>()
     ///         .alphanumeric::<ABNum>()
-    ///         .expect("NonEmpty")
     ///         .expect("Parse success"),
     ///     ABNum { a: 2, b: 1, num: 6 }
     /// );
     /// ```
-    pub fn alphanumeric<O>(&mut self) -> Option<Result<O, <O as FromStr>::Err>>
+    pub fn alphanumeric<O>(&mut self) -> Result<O, <O as FromStr>::Err>
     where
         O: FromStr,
     {
@@ -289,11 +300,14 @@ where
     }
 }
 
-/// A type that can collect [`u8`] on the stack to be used to [`str::parse`].
-/// Requires a max buffer size at compile time.
+/// A type that can collect [`char`]s on the stack and is compatible with
+/// [`yap::Tokens::buffered()`].
+///
 /// # Panics
-/// - Collecting more [`u8`] than the buffer's max size causes a panic.
-/// - Invalid-Utf8 will panic when dereferencing to a [`str`].
+///
+/// Using `FromIter` to collect more chars than will fit in the buffer will
+/// panic. `FromIter` is called implicitly in many of the methods on [`BufferedTokens`].
+///
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct StackString<const N: usize> {
     buf: [u8; N],
@@ -301,17 +315,22 @@ pub struct StackString<const N: usize> {
 }
 
 impl<const N: usize> StackString<N> {
-    /// Push a new [`u8`] onto the [`StackString`]. Failing if not enough room.
-    /// It is ok to make the [`StackString`] invalid Utf8 as long as
-    /// it is not dereferenced as a [`str`] while invalid.
-    #[allow(clippy::result_unit_err)]
-    pub fn push(&mut self, val: u8) -> Result<(), ()> {
-        if self.len == N {
-            return Err(());
+    /// Attempt to push a new [`char`] onto the [`StackString`].
+    /// Returns false if there is no more space.
+    pub fn push(&mut self, val: char) -> bool {
+        let mut buf = [0; 4];
+        let encoded = val.encode_utf8(&mut buf);
+
+        let remaining = N - self.len;
+        if remaining < encoded.len() {
+            return false;
         }
-        self.buf[self.len] = val;
-        self.len += 1;
-        Ok(())
+
+        for b in encoded.bytes() {
+            self.buf[self.len] = b;
+            self.len += 1;
+        }
+        true
     }
 }
 
@@ -324,36 +343,16 @@ impl<const N: usize> Default for StackString<N> {
     }
 }
 
-impl<const N: usize> FromIterator<u8> for StackString<N> {
-    /// Creates a [`StackString`] from an iterator.
-    /// # Panics
-    /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
-    fn from_iter<I: IntoIterator<Item = u8>>(iter: I) -> Self {
-        let mut out = Self::default();
-        for (i, val) in iter.into_iter().enumerate() {
-            assert!(i < N, "Iterator longer than max buffer length ({N})");
-            out.buf[i] = val;
-            out.len += 1;
-        }
-        out
-    }
-}
-
 impl<const N: usize> FromIterator<char> for StackString<N> {
     /// Creates a [`StackString`] from an iterator.
+    ///
     /// # Panics
-    /// Panics if the iterator is longer than the internal buffer of the [`StackString`]
+    ///
+    /// Panics if the iterator is longer than the internal buffer of the [`StackString`].
     fn from_iter<I: IntoIterator<Item = char>>(iter: I) -> Self {
         let mut out = Self::default();
-        for val in iter.into_iter() {
-            let mut buf = [0; 4];
-            let encoded = val.encode_utf8(&mut buf);
-            let remaining = N - out.len;
-            if remaining >= encoded.len() {
-                for b in encoded.bytes() {
-                    out.push(b).expect("Enough capacity left")
-                }
-            } else {
+        for char in iter.into_iter() {
+            if !out.push(char) {
                 panic!("Iterator longer than max buffer length ({N})");
             }
         }
@@ -365,11 +364,16 @@ impl<const N: usize> FromStr for StackString<N> {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut out = StackString::default();
-        // FromIterator impl panics. Use this instead.
-        for b in s.bytes() {
-            out.push(b)?
+        // String is too big to fit; error.
+        if s.len() > N {
+            return Err(());
         }
+
+        // String will fit; manually copy bytes into the array:
+        let mut out = StackString::default();
+        out.buf[..s.len()].copy_from_slice(s.as_bytes());
+        out.len = s.len();
+
         Ok(out)
     }
 }
@@ -378,8 +382,6 @@ impl<const N: usize> Deref for StackString<N> {
     type Target = str;
 
     /// Dereferences the stack string to a `&str`.
-    /// # Panics
-    /// - If the [`StackString`] holds invalid Utf8.
     fn deref(&self) -> &Self::Target {
         core::str::from_utf8(&self.buf[..self.len]).expect("Valid Utf8")
     }
@@ -387,8 +389,6 @@ impl<const N: usize> Deref for StackString<N> {
 
 impl<const N: usize> DerefMut for StackString<N> {
     /// Dereferences the stack string to a `&mut str`.
-    /// # Panics
-    /// - If the [`StackString`] holds invalid Utf8.
     fn deref_mut(&mut self) -> &mut Self::Target {
         core::str::from_utf8_mut(&mut self.buf[..self.len]).expect("Valid Utf8")
     }
@@ -400,97 +400,68 @@ mod test {
     use crate::{types::IterTokens, IntoTokens};
 
     #[test]
-    #[cfg(feature = "std")]
-    fn parse_string() {
-        let a: String = "123🗻∈🌏"
-            .into_tokens()
-            .as_buffered::<String>()
-            .parse_remaining()
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(a, "123🗻∈🌏");
-        let a: String = IterTokens::into_tokens("123🗻∈🌏".chars())
-            .as_buffered::<StackString<14>>()
-            .parse_remaining()
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(a, "123🗻∈🌏");
+    fn stack_string_from_iter() {
+        assert_eq!(
+            StackString::<20>::from_iter("123🗻∈🌏".chars()).to_string(),
+            "123🗻∈🌏"
+        );
     }
 
     #[test]
-    #[cfg(feature = "std")]
-    fn parse_unsigned() {
-        let a: u8 = ("123🗻∈🌏".into_tokens())
-            .as_buffered::<String>()
-            .digit()
-            .expect("NonEmpty")
+    fn parse_remaining() {
+        let s: String = "123🗻∈🌏"
+            .into_tokens()
+            .buffered::<String>()
+            .parse_remaining()
+            .expect("Parse success");
+        assert_eq!(s, "123🗻∈🌏");
+
+        let s: String = IterTokens::new("123🗻∈🌏".chars())
+            .buffered::<StackString<14>>()
+            .parse_remaining()
+            .expect("Parse success");
+        assert_eq!(s, "123🗻∈🌏");
+    }
+
+    #[test]
+    fn parse_remaining_fails_number_out_of_range() {
+        assert!(IterTokens::new("256".chars())
+            .buffered::<StackString<3>>()
+            .parse_remaining::<u8>()
+            .is_err())
+    }
+
+    #[test]
+    fn parse_digits() {
+        let a: u8 = "123🗻∈🌏"
+            .into_tokens()
+            .buffered::<String>()
+            .digits()
             .expect("Parse success");
         assert_eq!(a, 123);
     }
 
     #[test]
-    #[cfg(feature = "std")]
-    fn parse_signed() {
-        let a: u8 = "+123"
-            .into_tokens()
-            .as_buffered::<String>()
-            .parse_n(3)
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(a, 12);
-        let a: i8 = "+123"
-            .into_tokens()
-            .as_buffered::<String>()
-            .parse_n(3)
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(a, 12);
+    fn parse_signed_digits() {
         let a: i8 = "-123"
             .into_tokens()
-            .as_buffered::<StackString<4>>()
-            .signed_digit()
-            .expect("NonEmpty")
+            .buffered::<StackString<4>>()
+            .signed_digits()
             .expect("Parse success");
         assert_eq!(a, -123);
     }
 
     #[test]
-    fn parse_stack() {
-        let a: i32 = IterTokens::into_tokens("-123456789🗻∈🌏".bytes())
-            .as_buffered::<StackString<10>>()
+    fn parse_n() {
+        let a: i32 = IterTokens::new("-123456789🗻∈🌏".chars())
+            .buffered::<StackString<10>>()
             .parse_n(10)
-            .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
-        let a: i32 = IterTokens::into_tokens("-123456789🗻∈🌏".bytes())
-            .as_buffered::<StackString<20>>()
+        let a: i32 = IterTokens::new("-123456789🗻∈🌏".chars())
+            .buffered::<StackString<20>>()
             .parse_n(10)
-            .expect("NonEmpty")
             .expect("Parse success");
         assert_eq!(a, -123456789);
-        let a: StackString<21> = "-123456789🗻∈🌏"
-            .into_tokens()
-            .as_buffered::<StackString<21>>()
-            .parse_remaining()
-            .expect("NonEmpty")
-            .expect("Parse success");
-        assert_eq!(&*a, "-123456789🗻∈🌏");
-    }
-
-    #[test]
-    fn parse_empty() {
-        assert!(IterTokens::into_tokens("".bytes())
-            .as_buffered::<StackString<0>>()
-            .parse_remaining::<u8>()
-            .is_none())
-    }
-
-    #[test]
-    fn parse_fail() {
-        assert!(IterTokens::into_tokens("256".bytes())
-            .as_buffered::<StackString<3>>()
-            .parse_remaining::<u8>()
-            .expect("NonEmpty")
-            .is_err())
     }
 }
