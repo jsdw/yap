@@ -801,9 +801,9 @@ pub trait Tokens: Sized {
     /// assert_eq!(&*hello, "hello");
     /// assert_eq!(s.remaining(), "");
     /// ```
-    fn surrounded_by<F, S, Output>(&mut self, mut parser: F, mut surrounding: S) -> Output
+    fn surrounded_by<F, S, Output>(&mut self, parser: F, mut surrounding: S) -> Output
     where
-        F: FnMut(&mut Self) -> Output,
+        F: FnOnce(&mut Self) -> Output,
         S: FnMut(&mut Self),
     {
         surrounding(self);
@@ -846,9 +846,9 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Some(('f', 'o')));
     /// ```
-    fn optional<F, Output>(&mut self, mut f: F) -> Option<Output>
+    fn optional<F, Output>(&mut self, f: F) -> Option<Output>
     where
-        F: FnMut(&mut Self) -> Option<Output>,
+        F: FnOnce(&mut Self) -> Option<Output>,
     {
         let location = self.location();
         match f(self) {
@@ -898,9 +898,9 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Ok((Some('f'), Some('o'))));
     /// ```
-    fn optional_err<F, Output, Error>(&mut self, mut f: F) -> Result<Output, Error>
+    fn optional_err<F, Output, Error>(&mut self, f: F) -> Result<Output, Error>
     where
-        F: FnMut(&mut Self) -> Result<Output, Error>,
+        F: FnOnce(&mut Self) -> Result<Output, Error>,
     {
         let location = self.location();
         match f(self) {

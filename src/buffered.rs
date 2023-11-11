@@ -30,6 +30,7 @@ where
     Buf: FromIterator<T::Item> + Deref<Target = str>,
 {
     /// This uses [`std::str::parse`] to parse the next `n` elements.
+    /// No tokens are consumed if the parsing fails.
     ///
     /// # Example
     ///
@@ -63,12 +64,15 @@ where
     where
         O: FromStr,
     {
-        let buf = self.tokens.as_iter().take(n).collect::<Buf>();
-        buf.parse::<O>()
+        self.tokens.optional_err(|tokens| {
+            let buf = tokens.as_iter().take(n).collect::<Buf>();
+            buf.parse::<O>()
+        })
     }
 
     /// This uses [`std::str::parse`] to parse the remaining elements
-    /// until [`None`] is returned from the token iterator.
+    /// until [`None`] is returned from the token iterator. No tokens
+    /// are consumed if the parsing fails.
     ///
     /// # Example
     ///
@@ -90,12 +94,14 @@ where
     where
         O: FromStr,
     {
-        let buf = self.tokens.as_iter().collect::<Buf>();
-        buf.parse::<O>()
+        self.tokens.optional_err(|tokens| {
+            let buf = tokens.as_iter().collect::<Buf>();
+            buf.parse::<O>()
+        })
     }
 
     /// This uses [`str::parse`] to parse the next chunk of input that matches
-    /// the given predicate.
+    /// the given predicate. No tokens are consumed if the parsing fails.
     ///
     /// # Example
     ///
@@ -123,8 +129,10 @@ where
         O: FromStr,
         F: FnMut(&T::Item) -> bool,
     {
-        let buf = self.tokens.tokens_while(take_while).collect::<Buf>();
-        buf.parse::<O>()
+        self.tokens.optional_err(move |tokens| {
+            let buf = tokens.tokens_while(take_while).collect::<Buf>();
+            buf.parse::<O>()
+        })
     }
 }
 
@@ -464,5 +472,26 @@ mod test {
             .parse_n(10)
             .expect("Parse success");
         assert_eq!(a, -123456789);
+    }
+
+    #[test]
+    fn parse_while_doesnt_consume_if_err() {
+        let mut s = "256abc".into_tokens();
+        assert!(s.buffered::<String>().digits::<u8>().is_err());
+        assert_eq!(s.offset(), 0);
+    }
+
+    #[test]
+    fn parse_n_doesnt_consume_if_err() {
+        let mut s = "256abc".into_tokens();
+        assert!(s.buffered::<String>().parse_n::<u8>(3).is_err());
+        assert_eq!(s.offset(), 0);
+    }
+
+    #[test]
+    fn parse_remaining_doesnt_consume_if_err() {
+        let mut s = "256".into_tokens();
+        assert!(s.buffered::<String>().parse_remaining::<u8>().is_err());
+        assert_eq!(s.offset(), 0);
     }
 }
