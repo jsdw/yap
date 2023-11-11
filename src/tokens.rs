@@ -25,7 +25,7 @@ pub use slice::Slice;
 pub use tokens_while::TokensWhile;
 
 use crate::{
-    buffered::BufferedTokens,
+    parse::Parse,
     types::{WithContext, WithContextMut},
 };
 
@@ -116,14 +116,19 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// Return a [`BufferedTokens`] over our tokens. This is exposes methods that require allocating
-    /// to a buffer. It is generic over the buffer so one can use a heap allocated type (ex.
-    /// [`std::string::String`](https://doc.rust-lang.org/std/string/struct.String.html)) or a stack
-    /// allocated type (ex. [`heapless::String`](https://docs.rs/heapless/latest/heapless/struct.String.html)
-    /// or [`crate::buffered::StackString`]). If a buffer of tokens is needed directly use
-    /// `tokens.as_iter().collect()`.
-    fn buffered<Buf>(&'_ mut self) -> BufferedTokens<'_, Self, Buf> {
-        BufferedTokens::new(self)
+    /// This exposes some methods that lean on [`str::parse`], for convenient string parsing.
+    /// The generic parameter here denotes the buffer type that will be used to store tokens
+    /// prior to parsing them:
+    ///
+    /// - `std::string::String` is the obvious choice if the maximum size is large/unknown and
+    ///   so heap allocation makes more sense.
+    /// - [`crate::parse::StackString`] is a simple stack allocated buffer with a fixed maximum
+    ///   size that can be used if the maximum size is small/known. **Warning: This will panic if
+    ///   you try to parse more bytes than it is able to store.**
+    ///
+    /// Any types implementing [`core::iter::FromIterator`] can be used as buffer types.
+    fn parse<Buf>(&'_ mut self) -> Parse<'_, Self, Buf> {
+        Parse::new(self)
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
