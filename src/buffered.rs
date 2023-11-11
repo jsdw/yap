@@ -8,7 +8,7 @@ use core::{
     str::FromStr,
 };
 
-/// This is returned from [`Tokens::as_buffered()`], and exposes methods
+/// This is returned from [`Tokens::buffered()`], and exposes methods
 /// requiring temporary allocations on our tokens.
 pub struct BufferedTokens<'a, T, Buf> {
     tokens: &'a mut T,
@@ -29,7 +29,7 @@ where
     T: Tokens,
     Buf: FromIterator<T::Item> + Deref<Target = str>,
 {
-    /// This uses [`std::str::parse`] to parse the next `n` elements.
+    /// This uses [`str::parse()`] to parse the next `n` elements.
     /// No tokens are consumed if the parsing fails.
     ///
     /// # Example
@@ -70,7 +70,7 @@ where
         })
     }
 
-    /// This uses [`std::str::parse`] to parse the remaining elements
+    /// This uses [`str::parse`] to parse the remaining elements
     /// until [`None`] is returned from the token iterator. No tokens
     /// are consumed if the parsing fails.
     ///
@@ -309,8 +309,8 @@ where
     }
 }
 
-/// A type that can collect [`char`]s on the stack and is compatible with
-/// [`yap::Tokens::buffered()`].
+/// A type that can collect [`char`]s on the stack and can be used in conjunction
+/// with [`crate::Tokens::buffered()`].
 ///
 /// # Panics
 ///
