@@ -142,7 +142,8 @@ where
     ///
     /// let mut tokens = "123456".into_tokens();
     ///
-    /// assert_eq!(tokens
+    /// assert_eq!(
+    ///     tokens
     ///         .buffered::<String>()
     ///         .digits::<u32>()
     ///         .expect("Parse success"),
