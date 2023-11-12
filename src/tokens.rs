@@ -117,14 +117,14 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// Consume the remaining tokens into the buffer type denoted by the second `Buf` generic, and
-    /// attempt to parse them using [`str::parse`] into the first `Out` generic type.
+    /// Attempt to parse the remaining tokens into the first `Out` generic using [`str::parse()`].
+    /// The second generic type may be used to buffer tokens, and can be any type that implements
+    /// `FromIterator<Self::Item> + Deref<Target = str>`.
     ///
     /// If the parsing fails, then no tokens are consumed.
     ///
-    /// The buffer type used can be heap allocated (ie `String` would be a common choice) or stack
-    /// allocated; anything that implements [`core::iter::FromIterator`] and
-    /// derefs to `str` is allowed.
+    /// As an optimisation, implementations may choose not to use the provided buffer type if they have a
+    /// suitable internal buffer of their own already. This is the case for [`crate::types::StrTokens`].
     ///
     /// This is mostly expected to be used in conjunction with [`Tokens::take`] and [`Tokens::take_while`],
     /// which themselves return the matching [`Tokens`].
@@ -133,18 +133,12 @@ pub trait Tokens: Sized {
     ///
     /// ```
     /// use yap::{ Tokens, IntoTokens };
-    /// use yap::buffer::StackString;
     ///
     /// let mut tokens = "123abc456".into_tokens();
     ///
-    /// // The provided buffer::StackString is a bounded stack allocated buffer
-    /// // which can be used when the maximum number of tokens you'll need to buffer
-    /// // is known (in this case, 3):
-    /// let n = tokens.take(3).parse::<u8, StackString<3>>().unwrap();
+    /// let n = tokens.take(3).parse::<u8, String>().unwrap();
     /// assert_eq!(n, 123);
     ///
-    /// // A heap allocated type like String can be used when the number of tokens
-    /// // you'll want to buffer before parsing is not known:
     /// let s = tokens.take_while(|t| t.is_alphabetic()).parse::<String, String>().unwrap();
     /// assert_eq!(s, "abc".to_string());
     ///
@@ -156,12 +150,60 @@ pub trait Tokens: Sized {
     /// let n2 = tokens.parse::<u16, String>().unwrap();
     /// assert_eq!(n2, 456);
     /// ```
-    fn parse<Out, Buf>(&'_ mut self) -> Result<Out, <Out as FromStr>::Err>
+    fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as FromStr>::Err>
     where
         Out: FromStr,
         Buf: FromIterator<Self::Item> + Deref<Target = str>,
     {
         self.optional_err(|toks| toks.as_iter().collect::<Buf>().parse::<Out>())
+    }
+
+    /// Attempt to parse the tokens between the `from` and `to` locations into the first `Out` generic,
+    /// using [`str::parse()`]. The second generic type may be used to buffer tokens, and can be any
+    /// type that implements `FromIterator<Self::Item> + Deref<Target = str>`.
+    ///
+    /// If the parsing fails, then no tokens are consumed.
+    ///
+    /// As an optimisation, implementations may choose not to use the provided buffer type if they have a
+    /// suitable internal buffer of their own already. This is the case for [`crate::types::StrTokens`].
+    ///
+    /// See [`Tokens::parse`] for a version of this that is often a little more ergonomic to work with.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut tokens = "123abc456".into_tokens();
+    ///
+    /// let from = tokens.location();
+    ///
+    /// // arbitrary complex parsing logic here that consumes some tokens.
+    /// tokens.take_while(|t| t.is_numeric()).for_each(drop);
+    ///
+    /// let to = tokens.location();
+    ///
+    /// // Now, use external logic to parse the matching tokens:
+    /// let n = tokens.parse_slice::<u16, String>(from, to).unwrap();
+    ///
+    /// assert_eq!(n, 123);
+    /// assert_eq!(tokens.remaining(), "abc456");
+    /// ```
+    fn parse_slice<Out, Buf>(
+        &mut self,
+        from: Self::Location,
+        to: Self::Location,
+    ) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.optional_err(|toks| {
+            toks.slice(from, to)
+                .as_iter()
+                .collect::<Buf>()
+                .parse::<Out>()
+        })
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements

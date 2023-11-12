@@ -146,14 +146,38 @@ impl<'a> Tokens for StrTokens<'a> {
         self.cursor = next_char_boundary;
         Some(next_char)
     }
+
     fn location(&self) -> Self::Location {
         StrTokensLocation(self.cursor)
     }
+
     fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
+
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
+    }
+
+    // We can do better than the default impl here; we have a &str that we
+    // can call parse on without needing to buffer anything,
+    fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.remaining().parse())
+    }
+    fn parse_slice<Out, Buf>(
+        &mut self,
+        from: Self::Location,
+        to: Self::Location,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.str[from.0..to.0].parse())
     }
 }
 
@@ -370,5 +394,43 @@ mod tests {
 
         tokens.set_location(loc);
         assert!(tokens.tokens("hello".chars()));
+    }
+
+    #[test]
+    fn str_tokens_parse_optimisations_work() {
+        // This buffer will panic if it's used.
+        struct BadBuffer;
+        impl core::iter::FromIterator<char> for BadBuffer {
+            fn from_iter<T: IntoIterator<Item = char>>(_: T) -> Self {
+                panic!("FromIterator impl shouldn't be used")
+            }
+        }
+        impl core::ops::Deref for BadBuffer {
+            type Target = str;
+            fn deref(&self) -> &Self::Target {
+                panic!("Deref impl shouldn't be used")
+            }
+        }
+
+        let mut tokens = "123abc".into_tokens();
+
+        // Find locations to the number:
+        let from = tokens.location();
+        tokens.take_while(|t| t.is_numeric()).for_each(drop);
+        let to = tokens.location();
+
+        // These shouldn't use the provided buffer, since StrTokens
+        // can make use of its own internal one:
+
+        let n = tokens
+            .slice(from.clone(), to.clone())
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (1)");
+        assert_eq!(n, 123);
+
+        let n = tokens
+            .parse_slice::<u16, BadBuffer>(from, to)
+            .expect("parse worked (2)");
+        assert_eq!(n, 123);
     }
 }
