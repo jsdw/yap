@@ -158,37 +158,19 @@ pub trait Tokens: Sized {
         self.optional_err(|toks| toks.as_iter().collect::<Buf>().parse::<Out>())
     }
 
-    /// Attempt to parse the tokens between the `from` and `to` locations into the first `Out` generic,
-    /// using [`str::parse()`]. The second generic type may be used to buffer tokens, and can be any
-    /// type that implements `FromIterator<Self::Item> + Deref<Target = str>`.
+    /// This isn't part of the visible API, but is called in when `parse()` is called
+    /// for the following:
     ///
-    /// If the parsing fails, then no tokens are consumed.
+    /// - `tokens.take(n).parse()`
+    /// - `tokens.slice(from,to).parse()`
+    /// - `tokens.take_while(f).parse()`
     ///
-    /// As an optimisation, implementations may choose not to use the provided buffer type if they have a
-    /// suitable internal buffer of their own already. This is the case for [`crate::types::StrTokens`].
+    /// Thus, specific implementations of `Tokens` may want to override this if they can
+    /// do something more efficient than the default. StrTokens does this to avoid
+    /// allocating in these cases.
     ///
-    /// See [`Tokens::parse`] for a version of this that is often a little more ergonomic to work with.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use yap::{ Tokens, IntoTokens };
-    ///
-    /// let mut tokens = "123abc456".into_tokens();
-    ///
-    /// let from = tokens.location();
-    ///
-    /// // arbitrary complex parsing logic here that consumes some tokens.
-    /// tokens.take_while(|t| t.is_numeric()).for_each(drop);
-    ///
-    /// let to = tokens.location();
-    ///
-    /// // Now, use external logic to parse the matching tokens:
-    /// let n = tokens.parse_slice::<u16, String>(from, to).unwrap();
-    ///
-    /// assert_eq!(n, 123);
-    /// assert_eq!(tokens.remaining(), "abc456");
-    /// ```
+    /// Implementations of this should not consume any tokens.
+    #[doc(hidden)]
     fn parse_slice<Out, Buf>(
         &mut self,
         from: Self::Location,
@@ -198,12 +180,10 @@ pub trait Tokens: Sized {
         Out: FromStr,
         Buf: FromIterator<Self::Item> + Deref<Target = str>,
     {
-        self.optional_err(|toks| {
-            toks.slice(from, to)
-                .as_iter()
-                .collect::<Buf>()
-                .parse::<Out>()
-        })
+        self.slice(from, to)
+            .as_iter()
+            .collect::<Buf>()
+            .parse::<Out>()
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -1277,5 +1257,25 @@ mod test {
         let rest: String = t.as_iter().collect();
         assert_eq!(res, Ok(2));
         assert_eq!(&*rest, "cbab");
+    }
+
+    #[test]
+    fn test_parse_slice() {
+        let mut tokens = "123abc456".into_tokens();
+
+        // consume some tokens to get start/end of number:
+        let from = tokens.location();
+        tokens.take_while(|t| t.is_numeric()).for_each(drop);
+        let to = tokens.location();
+
+        // reset location (to check that it won't be changed):
+        tokens.set_location(from);
+
+        // Now, parse_slice to parse the number:
+        let n = tokens.parse_slice::<u16, String>(from, to).unwrap();
+
+        assert_eq!(n, 123);
+        // Nothing should be consumed doing that:
+        assert_eq!(tokens.remaining(), "123abc456");
     }
 }

@@ -56,27 +56,21 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
         self.tokens.is_at_location(location)
     }
 
-    // This is an optimisation, because some impls like `StrTokens` can parse things
-    // more efficiently, so delegate to those impls if they exist rather than using
-    // the default impls which will buffer tokens first.
+    // Delegate to `parse_slice` here, since that function can be optimised
+    // by specific implementations.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
         Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
     {
-        self.tokens
-            .parse_slice::<Out, Buf>(self.from.clone(), self.to.clone())
-    }
-    fn parse_slice<Out, Buf>(
-        &mut self,
-        from: Self::Location,
-        to: Self::Location,
-    ) -> Result<Out, <Out as core::str::FromStr>::Err>
-    where
-        Out: core::str::FromStr,
-        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
-    {
-        self.tokens.parse_slice::<Out, Buf>(from, to)
+        let res = self
+            .tokens
+            .parse_slice::<Out, Buf>(self.from.clone(), self.to.clone())?;
+
+        // If parse was successful, consume the rest of this Slice, to be
+        // consistent with how `parse` normally works.
+        self.tokens.set_location(self.to.clone());
+        Ok(res)
     }
 }
 

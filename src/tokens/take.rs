@@ -55,4 +55,27 @@ where
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.tokens.is_at_location(location)
     }
+
+    // Delegate to `parse_slice` here, since that function can be optimised
+    // by specific implementations.
+    fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        // Consume all of the tokens this Take wants:
+        let start_loc = self.location();
+        while Iterator::next(self).is_some() {}
+        let end_loc = self.location();
+
+        // Try parsing them:
+        let res = self
+            .tokens
+            .parse_slice::<Out, Buf>(start_loc.clone(), end_loc);
+        // Don't consume anything on error:
+        if res.is_err() {
+            self.set_location(start_loc);
+        }
+        res
+    }
 }

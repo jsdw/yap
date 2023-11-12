@@ -161,13 +161,18 @@ impl<'a> Tokens for StrTokens<'a> {
 
     // We can do better than the default impl here; we have a &str that we
     // can call parse on without needing to buffer anything,
+
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
         Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
     {
-        self.optional_err(|toks| toks.remaining().parse())
+        let res = self.remaining().parse()?;
+        // If parse succeeds, consume all remaining tokens:
+        self.cursor = self.str.len();
+        Ok(res)
     }
+
     fn parse_slice<Out, Buf>(
         &mut self,
         from: Self::Location,
@@ -177,7 +182,8 @@ impl<'a> Tokens for StrTokens<'a> {
         Out: core::str::FromStr,
         Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
     {
-        self.optional_err(|toks| toks.str[from.0..to.0].parse())
+        let res = self.str[from.0..to.0].parse()?;
+        Ok(res)
     }
 }
 
@@ -412,6 +418,8 @@ mod tests {
             }
         }
 
+        // 1. slice(..).parse()
+
         let mut tokens = "123abc".into_tokens();
 
         // Find locations to the number:
@@ -419,18 +427,36 @@ mod tests {
         tokens.take_while(|t| t.is_numeric()).for_each(drop);
         let to = tokens.location();
 
-        // These shouldn't use the provided buffer, since StrTokens
-        // can make use of its own internal one:
-
         let n = tokens
             .slice(from, to)
             .parse::<u16, BadBuffer>()
             .expect("parse worked (1)");
+
         assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
+
+        // 2. take(..).parse()
+
+        let mut tokens = "123abc".into_tokens();
 
         let n = tokens
-            .parse_slice::<u16, BadBuffer>(from, to)
+            .take(3)
+            .parse::<u16, BadBuffer>()
             .expect("parse worked (2)");
+
         assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
+
+        // 3. take_while(..).parse()
+
+        let mut tokens = "123abc".into_tokens();
+
+        let n = tokens
+            .take_while(|t| t.is_numeric())
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (3)");
+
+        assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
     }
 }
