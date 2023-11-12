@@ -423,7 +423,7 @@ mod tests {
         // can make use of its own internal one:
 
         let n = tokens
-            .slice(from.clone(), to.clone())
+            .slice(from, to)
             .parse::<u16, BadBuffer>()
             .expect("parse worked (1)");
         assert_eq!(n, 123);
