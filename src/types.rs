@@ -228,7 +228,7 @@ impl<I> IterTokens<I> {
     ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
-    /// tokens.skip_tokens_while(|c| c.is_whitespace());
+    /// tokens.skip_while(|c| c.is_whitespace());
     /// assert!(tokens.tokens("world".chars()));
     /// ```
     pub fn new(iter: I) -> Self {
@@ -364,7 +364,7 @@ mod tests {
         tokens.set_location(loc.clone());
         assert!(tokens.tokens("hello".chars()));
 
-        tokens.skip_tokens_while(|c| c.is_whitespace());
+        tokens.skip_while(|c| c.is_whitespace());
 
         assert!(tokens.tokens("world".chars()));
 

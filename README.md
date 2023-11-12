@@ -69,7 +69,7 @@ fn parse_op(t: &mut impl Tokens<Item=char>) -> Option<Op> {
 // We also get other useful functions..
 fn parse_digits(t: &mut impl Tokens<Item=char>) -> Option<u32> {
     let s: String = t
-        .tokens_while(|c| c.is_digit(10))
+        .take_while(|c| c.is_digit(10))
         .collect();
     s.parse().ok()
 }
@@ -78,7 +78,7 @@ fn parse_digits(t: &mut impl Tokens<Item=char>) -> Option<u32> {
 let op_or_digit = tokens.sep_by_all(
     |t| t.surrounded_by(
         |t| parse_digits(t).map(OpOrDigit::Digit),
-        |t| { t.skip_tokens_while(|c| c.is_ascii_whitespace()); }
+        |t| { t.skip_while(|c| c.is_ascii_whitespace()); }
     ),
     |t| parse_op(t).map(OpOrDigit::Op)
 );

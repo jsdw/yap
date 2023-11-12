@@ -10,9 +10,12 @@ mod sep_by_all;
 mod sep_by_all_err;
 mod sep_by_err;
 mod slice;
-mod tokens_while;
+mod take;
+mod take_while;
 
 use core::borrow::Borrow;
+use core::ops::Deref;
+use core::str::FromStr;
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -22,12 +25,10 @@ pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
 pub use sep_by_err::SepByErr;
 pub use slice::Slice;
-pub use tokens_while::TokensWhile;
+pub use take::Take;
+pub use take_while::TakeWhile;
 
-use crate::{
-    parse::Parse,
-    types::{WithContext, WithContextMut},
-};
+use crate::types::{WithContext, WithContextMut};
 
 /// The tokens trait is an extension of the [`Iterator`] trait, and adds a bunch of useful methods
 /// for parsing tokens from the underlying iterable type. Implementations don't need to directly
@@ -116,19 +117,51 @@ pub trait Tokens: Sized {
         TokensIter { tokens: self }
     }
 
-    /// This exposes some methods that lean on [`str::parse`], for convenient string parsing.
-    /// The generic parameter here denotes the buffer type that will be used to store tokens
-    /// prior to parsing them:
+    /// Consume the remaining tokens into the buffer type denoted by the second `Buf` generic, and
+    /// attempt to parse them using [`str::parse`] into the first `Out` generic type.
     ///
-    /// - `std::string::String` is the obvious choice if the maximum size is large/unknown and
-    ///   so heap allocation makes more sense.
-    /// - [`crate::parse::StackString`] is a simple stack allocated buffer with a fixed maximum
-    ///   size that can be used if the maximum size is small/known. **Warning: This will panic if
-    ///   you try to parse more bytes than it is able to store.**
+    /// If the parsing fails, then no tokens are consumed.
     ///
-    /// Any types implementing [`core::iter::FromIterator`] can be used as buffer types.
-    fn parse<Buf>(&'_ mut self) -> Parse<'_, Self, Buf> {
-        Parse::new(self)
+    /// The buffer type used can be heap allocated (ie `String` would be a common choice) or stack
+    /// allocated; anything that implements [`core::iter::FromIterator`] and
+    /// derefs to `str` is allowed.
+    ///
+    /// This is mostly expected to be used in conjunction with [`Tokens::take`] and [`Tokens::take_while`],
+    /// which themselves return the matching [`Tokens`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    /// use yap::buffer::StackString;
+    ///
+    /// let mut tokens = "123abc456".into_tokens();
+    ///
+    /// // The provided buffer::StackString is a bounded stack allocated buffer
+    /// // which can be used when the maximum number of tokens you'll need to buffer
+    /// // is known (in this case, 3):
+    /// let n = tokens.take(3).parse::<u8, StackString<3>>().unwrap();
+    /// assert_eq!(n, 123);
+    ///
+    /// // A heap allocated type like String can be used when the number of tokens
+    /// // you'll want to buffer before parsing is not known:
+    /// let s = tokens.take_while(|t| t.is_alphabetic()).parse::<String, String>().unwrap();
+    /// assert_eq!(s, "abc".to_string());
+    ///
+    /// // This will fail to parse; the number is out of bounds. Failure will consume
+    /// // no tokens.
+    /// assert!(tokens.parse::<u8, String>().is_err());
+    ///
+    /// // This will work; the number can fit into a u16:
+    /// let n2 = tokens.parse::<u16, String>().unwrap();
+    /// assert_eq!(n2, 456);
+    /// ```
+    fn parse<Out, Buf>(&'_ mut self) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.as_iter().collect::<Buf>().parse::<Out>())
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -143,14 +176,14 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens, types::WithContext };
     ///
     /// fn skip_digits(toks: &mut WithContext<impl Tokens<Item=char>, usize>) {
-    ///     let n_skipped = toks.skip_tokens_while(|c| c.is_digit(10));
+    ///     let n_skipped = toks.skip_while(|c| c.is_digit(10));
     ///     *toks.context_mut() += n_skipped;
     /// }
     ///
     /// let mut tokens = "123abc456".into_tokens().with_context(0usize);
     ///
     /// skip_digits(&mut tokens);
-    /// tokens.skip_tokens_while(|c| c.is_alphabetic());
+    /// tokens.skip_while(|c| c.is_alphabetic());
     /// skip_digits(&mut tokens);
     ///
     /// assert_eq!(*tokens.context(), 6);
@@ -179,7 +212,7 @@ pub trait Tokens: Sized {
     ///     toks.with_context_mut(&mut counts).sep_by(
     ///         |t| {
     ///             t.context_mut().0 += 1;
-    ///             let n_skipped = t.skip_tokens_while(|c| c.is_digit(10));
+    ///             let n_skipped = t.skip_while(|c| c.is_digit(10));
     ///             if n_skipped == 0 { None } else { Some(()) }
     ///         },
     ///         |t| {
@@ -406,7 +439,8 @@ pub trait Tokens: Sized {
         None
     }
 
-    /// Return an iterator that will consume tokens until the provided function returns false.
+    /// Return an iterator that will take the next `n` tokens from the input (ending early
+    /// if the input runs early). The iterator returned also implements [`Tokens`] itself.
     ///
     /// # Example
     ///
@@ -414,14 +448,31 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let digits: String = s.tokens_while(|c| c.is_numeric()).collect();
+    /// let digits: String = s.take(3).collect();
+    /// assert_eq!(&*digits, "123");
+    /// assert_eq!(s.remaining(), "45abc");
+    /// ```
+    fn take(&'_ mut self, n: usize) -> Take<'_, Self> {
+        Take::new(self, n)
+    }
+
+    /// Return an iterator that will consume tokens until the provided function returns false.
+    /// The iterator returned also implements [`Tokens`] itself.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "12345abc".into_tokens();
+    /// let digits: String = s.take_while(|c| c.is_numeric()).collect();
     /// assert_eq!(&*digits, "12345");
     /// assert_eq!(s.remaining(), "abc");
     /// ```
     ///
-    /// This exists primarily because [`Iterator::take_while()`] will consume the first token that does not
-    /// match the predicate, which is often not what we'd want. The above example using [`Iterator::take_while()`]
-    /// would look like:
+    /// This exists primarily because [`Iterator::take_while()`] will consume the first token that
+    /// does not match the predicate, which is often not what we'd want. The above example using
+    /// [`Iterator::take_while()`] would look like:
     ///
     /// ```rust
     /// use yap::{ Tokens, IntoTokens };
@@ -430,20 +481,20 @@ pub trait Tokens: Sized {
     /// let digits: String = s.as_iter().take_while(|c| c.is_numeric()).collect();
     /// assert_eq!(&*digits, "12345");
     ///
-    /// // Note that `take_while` consumed the "a" in order to test it,
-    /// // whereas `tokens_while` did not:
+    /// // Note that `Iterator::take_while` consumed the "a" in order to test it,
+    /// // whereas `Tokens::take_while` did not:
     /// assert_eq!(s.remaining(), "bc");
     /// ```
-    fn tokens_while<F>(&'_ mut self, f: F) -> TokensWhile<'_, Self, F>
+    fn take_while<F>(&'_ mut self, f: F) -> TakeWhile<'_, Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
     {
-        TokensWhile::new(self, f)
+        TakeWhile::new(self, f)
     }
 
     /// Iterate over the tokens until the provided function returns false on one. Only consume the tokens
     /// that the function returned true for, returning the number of tokens that were consumed/skipped.
-    /// Equivalent to `toks.tokens_while(f).count()`.
+    /// Equivalent to `toks.take_while(f).count()`.
     ///
     /// # Example
     ///
@@ -451,16 +502,16 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let n_skipped = s.skip_tokens_while(|c| c.is_numeric());
+    /// let n_skipped = s.skip_while(|c| c.is_numeric());
     ///
     /// assert_eq!(n_skipped, 5);
     /// assert_eq!(s.remaining(), "abc");
     /// ```
-    fn skip_tokens_while<F>(&mut self, f: F) -> usize
+    fn skip_while<F>(&mut self, f: F) -> usize
     where
         F: FnMut(&Self::Item) -> bool,
     {
-        self.tokens_while(f).count()
+        self.take_while(f).count()
     }
 
     /// Returns an iterator that, on each iteration, attempts to run the provided parser
@@ -799,8 +850,8 @@ pub trait Tokens: Sized {
     /// let mut s = "   hello    ".into_tokens();
     ///
     /// let hello: String = s.surrounded_by(
-    ///     |t| t.tokens_while(|c| c.is_ascii_alphabetic()).collect(),
-    ///     |t| { t.skip_tokens_while(|c| c.is_ascii_whitespace()); }
+    ///     |t| t.take_while(|c| c.is_ascii_alphabetic()).collect(),
+    ///     |t| { t.skip_while(|c| c.is_ascii_whitespace()); }
     /// );
     ///
     /// assert_eq!(&*hello, "hello");

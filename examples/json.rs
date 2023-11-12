@@ -316,7 +316,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
 
     // Now, skip over digits. If none, then this isn't an number unless
     // the char above was a digit too.
-    let num_skipped = toks.skip_tokens_while(|c| c.is_numeric());
+    let num_skipped = toks.skip_while(|c| c.is_numeric());
     if num_skipped == 0 && !is_fst_number {
         let loc = toks.location();
         return Some(Err(ErrorKind::DigitExpectedNext.at(start, loc)));
@@ -328,7 +328,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
         if !toks.token('.') {
             return None;
         }
-        let num_digits = toks.skip_tokens_while(|c| c.is_numeric());
+        let num_digits = toks.skip_while(|c| c.is_numeric());
         if num_digits == 0 {
             let loc = toks.location();
             Some(Err(ErrorKind::DigitExpectedNext.at(start.clone(), loc)))
@@ -349,7 +349,7 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
 }
 
 fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {
-    toks.skip_tokens_while(|c| c.is_ascii_whitespace());
+    toks.skip_while(|c| c.is_ascii_whitespace());
 }
 
 fn field_separator(toks: &mut impl Tokens<Item = char>) -> bool {
