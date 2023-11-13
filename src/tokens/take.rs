@@ -56,26 +56,44 @@ where
         self.tokens.is_at_location(location)
     }
 
-    // Delegate to `parse_slice` here, since that function can be optimised
-    // by specific implementations.
+    // Delegate to root Tokens impl to allow optimisation.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
         Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
     {
-        // Consume all of the tokens this Take wants:
-        let start_loc = self.location();
-        while Iterator::next(self).is_some() {}
-        let end_loc = self.location();
-
-        // Try parsing them:
-        let res = self
-            .tokens
-            .parse_slice::<Out, Buf>(start_loc.clone(), end_loc);
-        // Don't consume anything on error:
-        if res.is_err() {
-            self.set_location(start_loc);
+        let res = self.tokens.parse_take::<Out, Buf>(self.n);
+        // Assume that underlying token location has been updated properly,
+        // but we still need to update our state here accordingly:
+        if res.is_ok() {
+            self.n = 0;
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{IntoTokens, Tokens};
+
+    #[test]
+    fn test_parse_success() {
+        let mut toks = "345abc".into_tokens();
+
+        let mut tw = toks.take(3);
+
+        let n = tw.parse::<u16, String>().unwrap();
+        assert_eq!(n, 345);
+        assert_eq!(tw.as_iter().collect::<String>(), "");
+    }
+
+    #[test]
+    fn test_parse_failure() {
+        let mut toks = "345abc".into_tokens();
+
+        let mut tw = toks.take(3);
+
+        tw.parse::<u8, String>().unwrap_err();
+        assert_eq!(tw.as_iter().collect::<String>(), "345");
     }
 }

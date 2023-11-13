@@ -158,18 +158,10 @@ pub trait Tokens: Sized {
         self.optional_err(|toks| toks.as_iter().collect::<Buf>().parse::<Out>())
     }
 
-    /// This isn't part of the visible API, but is called in when `parse()` is called
-    /// for the following:
+    /// This is called when `tokens.slice(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
     ///
-    /// - `tokens.take(n).parse()`
-    /// - `tokens.slice(from,to).parse()`
-    /// - `tokens.take_while(f).parse()`
-    ///
-    /// Thus, specific implementations of `Tokens` may want to override this if they can
-    /// do something more efficient than the default. StrTokens does this to avoid
-    /// allocating in these cases.
-    ///
-    /// Implementations of this should not consume any tokens.
+    /// This should never alter the location of the underlying tokens.
     #[doc(hidden)]
     fn parse_slice<Out, Buf>(
         &mut self,
@@ -184,6 +176,38 @@ pub trait Tokens: Sized {
             .as_iter()
             .collect::<Buf>()
             .parse::<Out>()
+    }
+
+    /// This is called when `tokens.take_while(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
+    ///
+    /// This should consume tokens on success, and consume nothing on failure.
+    #[doc(hidden)]
+    fn parse_take_while<Out, Buf, F>(&mut self, take_while: F) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+        F: FnMut(&Self::Item) -> bool,
+    {
+        self.optional_err(|toks| {
+            toks.take_while(take_while)
+                .as_iter()
+                .collect::<Buf>()
+                .parse::<Out>()
+        })
+    }
+
+    /// This is called when `tokens.take(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
+    ///
+    /// This should consume tokens on success, and consume nothing on failure.
+    #[doc(hidden)]
+    fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.take(n).as_iter().collect::<Buf>().parse::<Out>())
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -263,8 +287,9 @@ pub trait Tokens: Sized {
     /// Return a slice of tokens starting at the `to` location provided and ending just prior to
     /// the `from` location provided (ie equivalent to the range `to..from`).
     ///
-    /// The slice returned from implements [`Iterator`] and [`Tokens`], so you can use the full range
-    /// of parsing functions on it, or simply collect up the slice of tokens as you wish.
+    /// The slice returned from implements [`Tokens`], so you can use the full range
+    /// of parsing functions on it, or simply collect up the slice of tokens via the `as_iter()`
+    /// [`Iterator`] impl.
     ///
     /// **Note:** the slice returned from this prevents the original tokens from being used until
     /// it's dropped, and resets the original tokens to their current location on `Drop`. if you
@@ -461,8 +486,8 @@ pub trait Tokens: Sized {
         None
     }
 
-    /// Return an iterator that will take the next `n` tokens from the input (ending early
-    /// if the input runs early). The iterator returned also implements [`Tokens`] itself.
+    /// Return an [`Tokens`] impl that will take the next `n` tokens from the input (ending early
+    /// if the input runs early).
     ///
     /// # Example
     ///
@@ -470,7 +495,7 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let digits: String = s.take(3).collect();
+    /// let digits: String = s.take(3).as_iter().collect();
     /// assert_eq!(&*digits, "123");
     /// assert_eq!(s.remaining(), "45abc");
     /// ```
@@ -478,8 +503,7 @@ pub trait Tokens: Sized {
         Take::new(self, n)
     }
 
-    /// Return an iterator that will consume tokens until the provided function returns false.
-    /// The iterator returned also implements [`Tokens`] itself.
+    /// Return an [`Tokens`] impl that will consume tokens until the provided function returns false.
     ///
     /// # Example
     ///
@@ -487,7 +511,7 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let digits: String = s.take_while(|c| c.is_numeric()).collect();
+    /// let digits: String = s.take_while(|c| c.is_numeric()).as_iter().collect();
     /// assert_eq!(&*digits, "12345");
     /// assert_eq!(s.remaining(), "abc");
     /// ```
@@ -533,7 +557,7 @@ pub trait Tokens: Sized {
     where
         F: FnMut(&Self::Item) -> bool,
     {
-        self.take_while(f).count()
+        self.take_while(f).as_iter().count()
     }
 
     /// Returns an iterator that, on each iteration, attempts to run the provided parser
@@ -872,7 +896,7 @@ pub trait Tokens: Sized {
     /// let mut s = "   hello    ".into_tokens();
     ///
     /// let hello: String = s.surrounded_by(
-    ///     |t| t.take_while(|c| c.is_ascii_alphabetic()).collect(),
+    ///     |t| t.take_while(|c| c.is_ascii_alphabetic()).as_iter().collect(),
     ///     |t| { t.skip_while(|c| c.is_ascii_whitespace()); }
     /// );
     ///
@@ -1080,6 +1104,8 @@ impl<'a, T: Tokens> Iterator for TokensIter<'a, T> {
 #[cfg(all(test, feature = "std"))]
 mod test {
 
+    use crate::types::IterTokens;
+
     use super::*;
 
     #[derive(Debug, PartialEq)]
@@ -1260,22 +1286,81 @@ mod test {
     }
 
     #[test]
-    fn test_parse_slice() {
-        let mut tokens = "123abc456".into_tokens();
+    fn test_parse_optimisations() {
+        // Our test string.
+        const S: &str = "345abc456";
 
-        // consume some tokens to get start/end of number:
-        let from = tokens.location();
-        tokens.take_while(|t| t.is_numeric()).for_each(drop);
-        let to = tokens.location();
+        fn parse_slice(mut tokens: impl Tokens<Item = char>) {
+            // Get a start and end location to use:
+            let from = tokens.location();
+            tokens
+                .take_while(|t| t.is_numeric())
+                .as_iter()
+                .for_each(drop);
+            let to = tokens.location();
+            tokens.set_location(from.clone());
 
-        // reset location (to check that it won't be changed):
-        tokens.set_location(from);
+            // This should work (nothing will be consumed)
+            let n = tokens
+                .parse_slice::<u16, String>(from.clone(), to.clone())
+                .unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.as_iter().collect::<String>(), S);
 
-        // Now, parse_slice to parse the number:
-        let n = tokens.parse_slice::<u16, String>(from, to).unwrap();
+            // reset location
+            tokens.set_location(from.clone());
 
-        assert_eq!(n, 123);
-        // Nothing should be consumed doing that:
-        assert_eq!(tokens.remaining(), "123abc456");
+            // This won't work (again nothing will be consumed)
+            tokens.parse_slice::<u8, String>(from, to).unwrap_err();
+            assert_eq!(tokens.as_iter().collect::<String>(), S);
+        }
+
+        fn parse_take_while(mut tokens: impl Tokens<Item = char>) {
+            let start = tokens.location();
+
+            // This should work
+            let n = tokens
+                .parse_take_while::<u16, String, _>(|t| t.is_numeric())
+                .unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.as_iter().collect::<String>(), "abc456");
+
+            // reset location
+            tokens.set_location(start);
+
+            // This wont work and won't consume anything
+            tokens
+                .parse_take_while::<u8, String, _>(|t| t.is_numeric())
+                .unwrap_err();
+            assert_eq!(tokens.as_iter().collect::<String>(), "345abc456");
+        }
+
+        fn parse_take(mut tokens: impl Tokens<Item = char>) {
+            let start = tokens.location();
+
+            // This should work
+            let n = tokens.parse_take::<u16, String>(3).unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.as_iter().collect::<String>(), "abc456");
+
+            // reset location
+            tokens.set_location(start);
+
+            // This wont work and won't consume anything
+            tokens.parse_take::<u8, String>(3).unwrap_err();
+            assert_eq!(tokens.as_iter().collect::<String>(), "345abc456");
+        }
+
+        // Test each method against our "optimised" StrTokens
+        // and also the default impl of the methods via IterTokens
+
+        parse_slice(IterTokens::new(S.chars()));
+        parse_slice(S.into_tokens());
+
+        parse_take_while(IterTokens::new(S.chars()));
+        parse_take_while(S.into_tokens());
+
+        parse_take(IterTokens::new(S.chars()));
+        parse_take(S.into_tokens());
     }
 }

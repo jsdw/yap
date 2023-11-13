@@ -182,8 +182,50 @@ impl<'a> Tokens for StrTokens<'a> {
         Out: core::str::FromStr,
         Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
     {
-        let res = self.str[from.0..to.0].parse()?;
-        Ok(res)
+        // Don't change the location; slices never consume the underlying Tokens.
+        self.str[from.0..to.0].parse()
+    }
+
+    fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        // Consume the n tokens.
+        let from = self.location();
+        self.take(n).as_iter().for_each(drop);
+        let to = self.location();
+
+        let res = self.str[from.0..to.0].parse();
+
+        // Reset location on error.
+        if res.is_err() {
+            self.set_location(from);
+        }
+        res
+    }
+
+    fn parse_take_while<Out, Buf, F>(
+        &mut self,
+        take_while: F,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+        F: FnMut(&Self::Item) -> bool,
+    {
+        // Consume all of the tokens matching the function.
+        let from = self.location();
+        self.take_while(take_while).as_iter().for_each(drop);
+        let to = self.location();
+
+        let res = self.str[from.0..to.0].parse();
+
+        // Reset location on error.
+        if res.is_err() {
+            self.set_location(from);
+        }
+        res
     }
 }
 
@@ -256,10 +298,18 @@ impl<I> IterTokens<I> {
     /// let chars_iter = "hello \n\t world".chars();
     /// let mut tokens = IterTokens::new(chars_iter);
     ///
+    /// let loc = tokens.location();
+    ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
     /// tokens.skip_while(|c| c.is_whitespace());
     /// assert!(tokens.tokens("world".chars()));
+    ///
+    /// // We can reset the location too as with other Tokens impls.
+    /// // A location here is just a copy of the iterator at an
+    /// // earlier point.
+    /// tokens.set_location(loc);
+    /// assert!(tokens.tokens("hello".chars()));
     /// ```
     pub fn new(iter: I) -> Self {
         IterTokens { iter, cursor: 0 }
@@ -424,7 +474,10 @@ mod tests {
 
         // Find locations to the number:
         let from = tokens.location();
-        tokens.take_while(|t| t.is_numeric()).for_each(drop);
+        tokens
+            .take_while(|t| t.is_numeric())
+            .as_iter()
+            .for_each(drop);
         let to = tokens.location();
 
         let n = tokens

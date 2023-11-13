@@ -56,8 +56,7 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
         self.tokens.is_at_location(location)
     }
 
-    // Delegate to `parse_slice` here, since that function can be optimised
-    // by specific implementations.
+    // Delegate to root Tokens impl to allow optimisation.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
@@ -65,12 +64,13 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     {
         let res = self
             .tokens
-            .parse_slice::<Out, Buf>(self.from.clone(), self.to.clone())?;
-
-        // If parse was successful, consume the rest of this Slice, to be
-        // consistent with how `parse` normally works.
-        self.tokens.set_location(self.to.clone());
-        Ok(res)
+            .parse_slice::<Out, Buf>(self.from.clone(), self.to.clone());
+        // If the underlying parse worked, then "consume" the slice in case
+        // we try using it again. If it didn't work then leave as is.
+        if res.is_ok() {
+            self.from = self.to.clone();
+        }
+        res
     }
 }
 
@@ -79,5 +79,41 @@ impl<'a, T: Tokens> Drop for Slice<'a, T> {
         // Reset the location on drop so that the tokens
         // remain unaffected by this iterator:
         self.tokens.set_location(self.original.clone());
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{IntoTokens, Tokens};
+
+    #[test]
+    fn test_parse_success() {
+        let mut toks = "345abc".into_tokens();
+
+        // get locations for testing:
+        let from = toks.location();
+        toks.take_while(|t| t.is_numeric()).as_iter().for_each(drop);
+        let to = toks.location();
+
+        let mut s = toks.slice(from, to);
+
+        let n = s.parse::<u16, String>().unwrap();
+        assert_eq!(n, 345);
+        assert_eq!(s.as_iter().collect::<String>(), "");
+    }
+
+    #[test]
+    fn test_parse_failure() {
+        let mut toks = "345abc".into_tokens();
+
+        // get locations for testing:
+        let from = toks.location();
+        toks.take_while(|t| t.is_numeric()).as_iter().for_each(drop);
+        let to = toks.location();
+
+        let mut s = toks.slice(from, to);
+
+        s.parse::<u8, String>().unwrap_err();
+        assert_eq!(s.as_iter().collect::<String>(), "345");
     }
 }
