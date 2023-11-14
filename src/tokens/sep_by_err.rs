@@ -22,13 +22,14 @@ impl<'a, T, F, S> SepByErr<'a, T, F, S> {
     }
 }
 
-impl<'a, T, F, S, Output, E> Iterator for SepByErr<'a, T, F, S>
+impl<'a, T, F, S, Output, E> Tokens for SepByErr<'a, T, F, S>
 where
     T: Tokens,
     F: FnMut(&mut T) -> Result<Output, E>,
     S: FnMut(&mut T) -> bool,
 {
     type Item = Result<Output, E>;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -56,5 +57,14 @@ where
                 Some(Err(e))
             }
         }
+    }
+    fn location(&self) -> Self::Location {
+        self.tokens.location()
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        self.tokens.set_location(location)
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.tokens.is_at_location(location)
     }
 }

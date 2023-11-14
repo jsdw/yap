@@ -146,14 +146,86 @@ impl<'a> Tokens for StrTokens<'a> {
         self.cursor = next_char_boundary;
         Some(next_char)
     }
+
     fn location(&self) -> Self::Location {
         StrTokensLocation(self.cursor)
     }
+
     fn set_location(&mut self, location: Self::Location) {
         self.cursor = location.0;
     }
+
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0
+    }
+
+    // We can do better than the default impl here; we have a &str that we
+    // can call parse on without needing to buffer anything,
+
+    fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        let res = self.remaining().parse()?;
+        // If parse succeeds, consume all remaining tokens:
+        self.cursor = self.str.len();
+        Ok(res)
+    }
+
+    fn parse_slice<Out, Buf>(
+        &mut self,
+        from: Self::Location,
+        to: Self::Location,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        // Don't change the location; slices never consume the underlying Tokens.
+        self.str[from.0..to.0].parse()
+    }
+
+    fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        // Consume the n tokens.
+        let from = self.location();
+        self.take(n).consume();
+        let to = self.location();
+
+        let res = self.str[from.0..to.0].parse();
+
+        // Reset location on error.
+        if res.is_err() {
+            self.set_location(from);
+        }
+        res
+    }
+
+    fn parse_take_while<Out, Buf, F>(
+        &mut self,
+        take_while: F,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+        F: FnMut(&Self::Item) -> bool,
+    {
+        // Consume all of the tokens matching the function.
+        let from = self.location();
+        self.take_while(take_while).consume();
+        let to = self.location();
+
+        let res = self.str[from.0..to.0].parse();
+
+        // Reset location on error.
+        if res.is_err() {
+            self.set_location(from);
+        }
+        res
     }
 }
 
@@ -209,11 +281,11 @@ impl<I> TokenLocation for IterTokensLocation<I> {
     }
 }
 
-impl<I: Iterator + Clone> IterTokens<I> {
+impl<I> IterTokens<I> {
     /// We can't define a blanket impl for [`IntoTokens`] on all `impl Iterator + Clone` without
     /// [specialization](https://rust-lang.github.io/rfcs/1210-impl-specialization.html).
     ///
-    /// Instead, use this method to convert a suitable iterator into [`Tokens`].
+    /// Instead, you must manually construct new [`IterTokens`] using this function.
     ///
     /// # Example
     ///
@@ -224,15 +296,28 @@ impl<I: Iterator + Clone> IterTokens<I> {
     /// // would be preferred here (which would give StrTokens).
     /// // This is just to demonstrate using IterTokens:
     /// let chars_iter = "hello \n\t world".chars();
-    /// let mut tokens = IterTokens::into_tokens(chars_iter);
+    /// let mut tokens = IterTokens::new(chars_iter);
+    ///
+    /// let loc = tokens.location();
     ///
     /// // now we have tokens, we can do some parsing:
     /// assert!(tokens.tokens("hello".chars()));
-    /// tokens.skip_tokens_while(|c| c.is_whitespace());
+    /// tokens.skip_while(|c| c.is_whitespace());
     /// assert!(tokens.tokens("world".chars()));
+    ///
+    /// // We can reset the location too as with other Tokens impls.
+    /// // A location here is just a copy of the iterator at an
+    /// // earlier point.
+    /// tokens.set_location(loc);
+    /// assert!(tokens.tokens("hello".chars()));
     /// ```
-    pub fn into_tokens(iter: I) -> Self {
+    pub fn new(iter: I) -> Self {
         IterTokens { iter, cursor: 0 }
+    }
+
+    /// Return the inner iterator, consuming self.
+    pub fn into_inner(self) -> I {
+        self.iter
     }
 }
 
@@ -255,6 +340,12 @@ where
     }
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0.cursor
+    }
+
+    // Override the default impl to avoid a clone when calling
+    // `self.location().offset()`:
+    fn offset(&self) -> usize {
+        self.cursor
     }
 }
 
@@ -327,6 +418,45 @@ macro_rules! with_context_impls {
             fn is_at_location(&self, location: &Self::Location) -> bool {
                 self.tokens.is_at_location(location)
             }
+
+            // allow any parse optimisations from the underlying Tokens
+            // impl to carry through to this too:
+            fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse::<Out, Buf>()
+            }
+            fn parse_slice<Out, Buf>(
+                &mut self,
+                from: Self::Location,
+                to: Self::Location,
+            ) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse_slice::<Out, Buf>(from, to)
+            }
+            fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse_take::<Out, Buf>(n)
+            }
+            fn parse_take_while<Out, Buf, F>(
+                &mut self,
+                take_while: F,
+            ) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+                F: FnMut(&Self::Item) -> bool,
+            {
+                self.tokens.parse_take_while::<Out, Buf, F>(take_while)
+            }
         }
     }
 }
@@ -351,7 +481,7 @@ mod tests {
     fn iterator_tokens_sanity_check() {
         // In reality, one should always prefer to use StrTokens for strings:
         let chars = "hello \n\t world".chars();
-        let mut tokens = IterTokens::into_tokens(chars);
+        let mut tokens = IterTokens::new(chars);
 
         let loc = tokens.location();
         assert!(tokens.tokens("hello".chars()));
@@ -359,11 +489,85 @@ mod tests {
         tokens.set_location(loc.clone());
         assert!(tokens.tokens("hello".chars()));
 
-        tokens.skip_tokens_while(|c| c.is_whitespace());
+        tokens.skip_while(|c| c.is_whitespace());
 
         assert!(tokens.tokens("world".chars()));
 
         tokens.set_location(loc);
         assert!(tokens.tokens("hello".chars()));
+    }
+
+    #[test]
+    fn str_tokens_parse_optimisations_work() {
+        // This buffer will panic if it's used.
+        struct BadBuffer;
+        impl core::iter::FromIterator<char> for BadBuffer {
+            fn from_iter<T: IntoIterator<Item = char>>(_: T) -> Self {
+                panic!("FromIterator impl shouldn't be used")
+            }
+        }
+        impl core::ops::Deref for BadBuffer {
+            type Target = str;
+            fn deref(&self) -> &Self::Target {
+                panic!("Deref impl shouldn't be used")
+            }
+        }
+
+        // 1. slice(..).parse()
+
+        let mut tokens = "123abc".into_tokens();
+
+        // Find locations to the number:
+        let from = tokens.location();
+        tokens.take_while(|t| t.is_numeric()).consume();
+        let to = tokens.location();
+
+        let n = tokens
+            .slice(from, to)
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (1)");
+
+        assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
+
+        // 2. take(..).parse()
+
+        let mut tokens = "123abc".into_tokens();
+
+        let n = tokens
+            .take(3)
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (2)");
+
+        assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
+
+        // 3. take_while(..).parse()
+
+        let mut tokens = "123abc".into_tokens();
+
+        let n = tokens
+            .take_while(|t| t.is_numeric())
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (3)");
+
+        assert_eq!(n, 123);
+        assert_eq!(tokens.remaining(), "abc");
+
+        // 4. take(..).take_while(..).take(..).parse()
+
+        let mut tokens = "123ab+=".into_tokens();
+
+        let n = tokens
+            .take(6)
+            .take(5)
+            .take_while(|t| t.is_alphanumeric())
+            .take_while(|t| t.is_numeric())
+            .take(2)
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (4)");
+
+        assert_eq!(n, 12);
+        assert_eq!(tokens.remaining(), "3ab+=");
     }
 }

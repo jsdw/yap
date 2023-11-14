@@ -22,13 +22,14 @@ impl<'a, T: Tokens, F, S, Output> SepByAll<'a, T, F, S, Output> {
     }
 }
 
-impl<'a, T, F, S, Output> Iterator for SepByAll<'a, T, F, S, Output>
+impl<'a, T, F, S, Output> Tokens for SepByAll<'a, T, F, S, Output>
 where
     T: Tokens,
     F: FnMut(&mut T) -> Option<Output>,
     S: FnMut(&mut T) -> Option<Output>,
 {
     type Item = Output;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         let last_good_pos = self.tokens.location();
@@ -75,5 +76,14 @@ where
             }
         };
         Some(sep)
+    }
+    fn location(&self) -> Self::Location {
+        self.tokens.location()
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        self.tokens.set_location(location)
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.tokens.is_at_location(location)
     }
 }

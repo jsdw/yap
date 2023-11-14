@@ -10,9 +10,12 @@ mod sep_by_all;
 mod sep_by_all_err;
 mod sep_by_err;
 mod slice;
-mod tokens_while;
+mod take;
+mod take_while;
 
 use core::borrow::Borrow;
+use core::ops::Deref;
+use core::str::FromStr;
 
 // Re-export the structs handed back from token fns:
 pub use many::Many;
@@ -22,14 +25,17 @@ pub use sep_by_all::SepByAll;
 pub use sep_by_all_err::SepByAllErr;
 pub use sep_by_err::SepByErr;
 pub use slice::Slice;
-pub use tokens_while::TokensWhile;
+pub use take::Take;
+pub use take_while::TakeWhile;
 
 use crate::types::{WithContext, WithContextMut};
 
 /// The tokens trait is an extension of the [`Iterator`] trait, and adds a bunch of useful methods
-/// for parsing tokens from the underlying iterable type. Implementations don't need to directly
-/// implement [`Iterator`]; instead there exists a [`Tokens::as_iter()`] method to return one that
-/// is based on the methods implemented here.
+/// for parsing tokens from the underlying iterable type.
+///
+/// Implementations don't need to directly implement [`Iterator`]; instead there exists
+/// [`Tokens::as_iter()`] and [`Tokens::into_iter()`] methods to return an iterator that is based
+/// on the methods implemented here and keeps iterator methods in a separate namespace.
 pub trait Tokens: Sized {
     /// The item returned from [`Tokens::next()`].
     type Item;
@@ -106,11 +112,101 @@ pub trait Tokens: Sized {
     fn is_at_location(&self, location: &Self::Location) -> bool;
 
     /// Return an iterator over our tokens. The [`Tokens`] trait already mirrors the [`Iterator`]
-    /// interface by providing [`Tokens::Item`] and [`Tokens::next()`], but we allow the [`Iterator`]
-    /// methods to be kept separate to avoid collisions, and because some iterator methods don't
-    /// consume tokens as you might expect, and so must be used with care when parsing input.
-    fn as_iter(&'_ mut self) -> TokensIter<'_, Self> {
-        TokensIter { tokens: self }
+    /// interface by providing [`Tokens::Item`] and [`Tokens::next()`], but we keep the [`Iterator`]
+    /// separate to avoid collisions, and because some iterator methods don't consume tokens as you
+    /// might expect, and so must be used with care when parsing input.
+    fn as_iter(&'_ mut self) -> TokensAsIter<'_, Self> {
+        TokensAsIter { tokens: self }
+    }
+
+    /// Like [`Tokens::as_iter()`], except it consumes `self`, which can be useful in some situations.
+    fn into_iter(self) -> TokensIntoIter<Self> {
+        TokensIntoIter { tokens: self }
+    }
+
+    /// Attempt to parse the remaining tokens into the first `Out` generic using [`str::parse()`].
+    /// The second generic type may be used to buffer tokens, and can be any type that implements
+    /// `FromIterator<Self::Item> + Deref<Target = str>`.
+    ///
+    /// If the parsing fails, then no tokens are consumed.
+    ///
+    /// As an optimisation, implementations may choose not to use the provided buffer type if they have a
+    /// suitable internal buffer of their own already. This is the case for [`crate::types::StrTokens`].
+    ///
+    /// This is mostly expected to be used in conjunction with [`Tokens::take`] and [`Tokens::take_while`],
+    /// which themselves return the matching [`Tokens`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut tokens = "123abc456".into_tokens();
+    ///
+    /// let n = tokens.take(3).parse::<u8, String>().unwrap();
+    /// assert_eq!(n, 123);
+    ///
+    /// let s = tokens.take_while(|t| t.is_alphabetic()).parse::<String, String>().unwrap();
+    /// assert_eq!(s, "abc".to_string());
+    ///
+    /// // This will fail to parse; the number is out of bounds. Failure will consume
+    /// // no tokens.
+    /// assert!(tokens.parse::<u8, String>().is_err());
+    ///
+    /// // This will work; the number can fit into a u16:
+    /// let n2 = tokens.parse::<u16, String>().unwrap();
+    /// assert_eq!(n2, 456);
+    /// ```
+    fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.collect::<Buf>().parse::<Out>())
+    }
+
+    /// This is called when `tokens.slice(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
+    ///
+    /// This should never alter the location of the underlying tokens.
+    #[doc(hidden)]
+    fn parse_slice<Out, Buf>(
+        &mut self,
+        from: Self::Location,
+        to: Self::Location,
+    ) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.slice(from, to).collect::<Buf>().parse::<Out>()
+    }
+
+    /// This is called when `tokens.take_while(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
+    ///
+    /// This should consume tokens on success, and consume nothing on failure.
+    #[doc(hidden)]
+    fn parse_take_while<Out, Buf, F>(&mut self, take_while: F) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+        F: FnMut(&Self::Item) -> bool,
+    {
+        self.optional_err(|toks| toks.take_while(take_while).collect::<Buf>().parse::<Out>())
+    }
+
+    /// This is called when `tokens.take(..).parse()` is called, and exists so that `Tokens`
+    /// impls have the chance to override/optimise this behaviour.
+    ///
+    /// This should consume tokens on success, and consume nothing on failure.
+    #[doc(hidden)]
+    fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as FromStr>::Err>
+    where
+        Out: FromStr,
+        Buf: FromIterator<Self::Item> + Deref<Target = str>,
+    {
+        self.optional_err(|toks| toks.take(n).collect::<Buf>().parse::<Out>())
     }
 
     /// Attach some context to your tokens. The returned struct, [`WithContext`], also implements
@@ -125,14 +221,14 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens, types::WithContext };
     ///
     /// fn skip_digits(toks: &mut WithContext<impl Tokens<Item=char>, usize>) {
-    ///     let n_skipped = toks.skip_tokens_while(|c| c.is_digit(10));
+    ///     let n_skipped = toks.skip_while(|c| c.is_digit(10));
     ///     *toks.context_mut() += n_skipped;
     /// }
     ///
     /// let mut tokens = "123abc456".into_tokens().with_context(0usize);
     ///
     /// skip_digits(&mut tokens);
-    /// tokens.skip_tokens_while(|c| c.is_alphabetic());
+    /// tokens.skip_while(|c| c.is_alphabetic());
     /// skip_digits(&mut tokens);
     ///
     /// assert_eq!(*tokens.context(), 6);
@@ -161,14 +257,14 @@ pub trait Tokens: Sized {
     ///     toks.with_context_mut(&mut counts).sep_by(
     ///         |t| {
     ///             t.context_mut().0 += 1;
-    ///             let n_skipped = t.skip_tokens_while(|c| c.is_digit(10));
+    ///             let n_skipped = t.skip_while(|c| c.is_digit(10));
     ///             if n_skipped == 0 { None } else { Some(()) }
     ///         },
     ///         |t| {
     ///             t.context_mut().1 += 1;
     ///             t.token(',')
     ///         }
-    ///     ).last();
+    ///     ).consume();
     ///     counts
     /// }
     ///
@@ -190,8 +286,8 @@ pub trait Tokens: Sized {
     /// Return a slice of tokens starting at the `to` location provided and ending just prior to
     /// the `from` location provided (ie equivalent to the range `to..from`).
     ///
-    /// The slice returned from implements [`Iterator`] and [`Tokens`], so you can use the full range
-    /// of parsing functions on it, or simply collect up the slice of tokens as you wish.
+    /// The slice returned from implements [`Tokens`], so you can use the full range
+    /// of parsing functions on it.
     ///
     /// **Note:** the slice returned from this prevents the original tokens from being used until
     /// it's dropped, and resets the original tokens to their current location on `Drop`. if you
@@ -214,7 +310,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.next(), Some('l'));
     ///
     /// // Iterating the from..to range given:
-    /// let vals: String = s.slice(from.clone(), to.clone()).as_iter().collect();
+    /// let vals: String = s.slice(from.clone(), to.clone()).collect();
     /// assert_eq!(&*vals, "fghij");
     ///
     /// // After the above is dropped, we can continue
@@ -223,7 +319,7 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.next(), Some('n'));
     ///
     /// // We can iterate this range again as we please:
-    /// let vals: String = s.slice(from, to).as_iter().collect();
+    /// let vals: String = s.slice(from, to).collect();
     /// assert_eq!(&*vals, "fghij");
     ///
     /// // And the original remains unaffected..
@@ -388,7 +484,8 @@ pub trait Tokens: Sized {
         None
     }
 
-    /// Return an iterator that will consume tokens until the provided function returns false.
+    /// Return a [`Tokens`] impl that will take the next `n` tokens from the input (ending early
+    /// if the input runs early).
     ///
     /// # Example
     ///
@@ -396,14 +493,30 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let digits: String = s.tokens_while(|c| c.is_numeric()).collect();
+    /// let digits: String = s.take(3).collect();
+    /// assert_eq!(&*digits, "123");
+    /// assert_eq!(s.remaining(), "45abc");
+    /// ```
+    fn take(&'_ mut self, n: usize) -> Take<'_, Self> {
+        Take::new(self, n)
+    }
+
+    /// Return a [`Tokens`] impl that will consume tokens until the provided function returns false.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{ Tokens, IntoTokens };
+    ///
+    /// let mut s = "12345abc".into_tokens();
+    /// let digits: String = s.take_while(|c| c.is_numeric()).collect();
     /// assert_eq!(&*digits, "12345");
     /// assert_eq!(s.remaining(), "abc");
     /// ```
     ///
-    /// This exists primarily because [`Iterator::take_while()`] will consume the first token that does not
-    /// match the predicate, which is often not what we'd want. The above example using [`Iterator::take_while()`]
-    /// would look like:
+    /// This exists primarily because [`Iterator::take_while()`] will consume the first token that
+    /// does not match the predicate, which is often not what we'd want. The above example using
+    /// [`Iterator::take_while()`] would look like:
     ///
     /// ```rust
     /// use yap::{ Tokens, IntoTokens };
@@ -412,20 +525,20 @@ pub trait Tokens: Sized {
     /// let digits: String = s.as_iter().take_while(|c| c.is_numeric()).collect();
     /// assert_eq!(&*digits, "12345");
     ///
-    /// // Note that `take_while` consumed the "a" in order to test it,
-    /// // whereas `tokens_while` did not:
+    /// // Note that `Iterator::take_while` consumed the "a" in order to test it,
+    /// // whereas `Tokens::take_while` did not:
     /// assert_eq!(s.remaining(), "bc");
     /// ```
-    fn tokens_while<F>(&'_ mut self, f: F) -> TokensWhile<'_, Self, F>
+    fn take_while<F>(&'_ mut self, f: F) -> TakeWhile<'_, Self, F>
     where
         F: FnMut(&Self::Item) -> bool,
     {
-        TokensWhile::new(self, f)
+        TakeWhile::new(self, f)
     }
 
     /// Iterate over the tokens until the provided function returns false on one. Only consume the tokens
     /// that the function returned true for, returning the number of tokens that were consumed/skipped.
-    /// Equivalent to `toks.tokens_while(f).count()`.
+    /// Equivalent to `toks.take_while(f).count()`.
     ///
     /// # Example
     ///
@@ -433,20 +546,20 @@ pub trait Tokens: Sized {
     /// use yap::{ Tokens, IntoTokens };
     ///
     /// let mut s = "12345abc".into_tokens();
-    /// let n_skipped = s.skip_tokens_while(|c| c.is_numeric());
+    /// let n_skipped = s.skip_while(|c| c.is_numeric());
     ///
     /// assert_eq!(n_skipped, 5);
     /// assert_eq!(s.remaining(), "abc");
     /// ```
-    fn skip_tokens_while<F>(&mut self, f: F) -> usize
+    fn skip_while<F>(&mut self, f: F) -> usize
     where
         F: FnMut(&Self::Item) -> bool,
     {
-        self.tokens_while(f).count()
+        self.take_while(f).as_iter().count()
     }
 
-    /// Returns an iterator that, on each iteration, attempts to run the provided parser
-    /// on the remaining tokens. If the parser returns [`None`], no tokens will be consumed.
+    /// Returns a [`Tokens`] impl that runs the provided parser again and again, returning
+    /// an output from it each time until it returns [`None`].
     ///
     /// # Example
     ///
@@ -473,9 +586,9 @@ pub trait Tokens: Sized {
         Many::new(self, parser)
     }
 
-    /// Returns an iterator that, on each iteration, attempts to run the provided parser
-    /// on the remaining tokens. If the parser returns an error, no tokens will be consumed
-    /// and the error will be returned as the final iteration.
+    /// Returns a [`Tokens`] impl that runs the provided parser again and again, returning
+    /// an output from it each time until it returns [`None`]. If the parser returns an error,
+    /// no tokens will be consumed and the error will be returned as the final iteration.
     ///
     /// # Example
     ///
@@ -538,7 +651,7 @@ pub trait Tokens: Sized {
     where
         F: FnMut(&mut Self) -> bool,
     {
-        self.many(|t| parser(t).then_some(())).count()
+        self.many(|t| parser(t).then_some(())).as_iter().count()
     }
 
     /// Ignore 1 or more instances of some parser. If the provided parser
@@ -577,21 +690,22 @@ pub trait Tokens: Sized {
     where
         F: FnMut(&mut Self) -> Result<Ignored, E>,
     {
-        let mut iter = self.many_err(parser);
+        let mut toks = self.many_err(parser);
         // Return error if immediate fail:
-        if let Some(Err(e)) = iter.next() {
+        if let Some(Err(e)) = toks.next() {
             return Err(e);
         }
         // Else just consume whatever we can and count it all up.
         // Note: the last iteration of `many_err` will return an Error
         // and not a value, so where we'd otherwise `+1` this count to
         // account for the `iter.next()` above, we don't have to.
-        let n_skipped = iter.count();
+        let n_skipped = toks.as_iter().count();
         Ok(n_skipped)
     }
 
-    /// Return an iterator that parses anything matching the `parser` function, and expects
-    /// to parse something matching the `separator` function between each one.
+    /// Return a [`Tokens`] impl that parses anything matching the first `parser` function,
+    /// and expects to parse something matching the second `separator` function between each
+    /// of these.
     ///
     /// # Example
     ///
@@ -616,7 +730,7 @@ pub trait Tokens: Sized {
         SepBy::new(self, parser, separator)
     }
 
-    /// Return an iterator that parses anything matching the `parser` function, and expects
+    /// Return a [`Tokens`] impl that parses anything matching the `parser` function, and expects
     /// to parse something matching the `separator` function between each one. Unlike [`Tokens::sep_by`],
     /// this accepts parsers that return `Result`s, and returns the result on each iteration. Once
     /// an error is hit, `None` is returned thereafter.
@@ -654,10 +768,10 @@ pub trait Tokens: Sized {
         SepByErr::new(self, parser, separator)
     }
 
-    /// Returns an iterator that parses anything matching the `parser` function,
+    /// Returns a [`Tokens`] impl that parses anything matching the `parser` function,
     /// and expects to parse something matching the `separator` function between each one.
-    /// The iterator returns the output from both the `parser` and `separator` function,
-    /// which means that they are expected to return the same type.
+    /// The [`Tokens`] impl hands back the output from both the `parser` and `separator`
+    /// function, which means that they are both expected to return the same type.
     ///
     /// # Example
     ///
@@ -712,8 +826,8 @@ pub trait Tokens: Sized {
         SepByAll::new(self, parser, separator)
     }
 
-    /// Similar to [`Tokens::sep_by_all`], except that the iterator returned also hands back
-    /// the first error encountered when attempting to run our `parser`.
+    /// Similar to [`Tokens::sep_by_all`], except that the [`Tokens`] impl returned also
+    /// hands back the first error encountered when attempting to run our `parser`.
     ///
     /// # Example
     ///
@@ -781,16 +895,16 @@ pub trait Tokens: Sized {
     /// let mut s = "   hello    ".into_tokens();
     ///
     /// let hello: String = s.surrounded_by(
-    ///     |t| t.tokens_while(|c| c.is_ascii_alphabetic()).collect(),
-    ///     |t| { t.skip_tokens_while(|c| c.is_ascii_whitespace()); }
+    ///     |t| t.take_while(|c| c.is_ascii_alphabetic()).collect(),
+    ///     |t| { t.skip_while(|c| c.is_ascii_whitespace()); }
     /// );
     ///
     /// assert_eq!(&*hello, "hello");
     /// assert_eq!(s.remaining(), "");
     /// ```
-    fn surrounded_by<F, S, Output>(&mut self, mut parser: F, mut surrounding: S) -> Output
+    fn surrounded_by<F, S, Output>(&mut self, parser: F, mut surrounding: S) -> Output
     where
-        F: FnMut(&mut Self) -> Output,
+        F: FnOnce(&mut Self) -> Output,
         S: FnMut(&mut Self),
     {
         surrounding(self);
@@ -833,9 +947,9 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Some(('f', 'o')));
     /// ```
-    fn optional<F, Output>(&mut self, mut f: F) -> Option<Output>
+    fn optional<F, Output>(&mut self, f: F) -> Option<Output>
     where
-        F: FnMut(&mut Self) -> Option<Output>,
+        F: FnOnce(&mut Self) -> Option<Output>,
     {
         let location = self.location();
         match f(self) {
@@ -885,9 +999,9 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Ok((Some('f'), Some('o'))));
     /// ```
-    fn optional_err<F, Output, Error>(&mut self, mut f: F) -> Result<Output, Error>
+    fn optional_err<F, Output, Error>(&mut self, f: F) -> Result<Output, Error>
     where
-        F: FnMut(&mut Self) -> Result<Output, Error>,
+        F: FnOnce(&mut Self) -> Result<Output, Error>,
     {
         let location = self.location();
         match f(self) {
@@ -897,6 +1011,75 @@ pub trait Tokens: Sized {
                 Err(err)
             }
         }
+    }
+
+    /// Checks next input is [`None`] and, if true, consumes the `None`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::Tokens;
+    /// use yap::types::IterTokens;
+    /// use core::iter;
+    ///
+    /// // This will always return None; eof will consume it.
+    /// let mut toks = IterTokens::new(iter::empty::<char>());
+    ///
+    /// assert_eq!(toks.eof(), true);
+    /// assert_eq!(toks.offset(), 1);
+    ///
+    /// assert_eq!(toks.eof(), true);
+    /// assert_eq!(toks.offset(), 2);
+    ///
+    /// // This will return a char; eof won't consume anything.
+    /// let mut toks = IterTokens::new(iter::once('a'));
+    ///
+    /// assert_eq!(toks.eof(), false);
+    /// assert_eq!(toks.offset(), 0);
+    ///
+    /// assert_eq!(toks.eof(), false);
+    /// assert_eq!(toks.offset(), 0);
+    /// ```
+    fn eof(&mut self) -> bool {
+        self.optional(|t| t.next().is_none().then_some(()))
+            .is_some()
+    }
+
+    /// Consume all remaining tokens. This is expected to be used in conjunction
+    /// with combinators like[`Tokens::take`] and [`Tokens::take_while`]. This is
+    /// just a shorthand for `toks.as_iter().for_each(drop)`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut toks = "abc123def".into_tokens();
+    ///
+    /// // Take won't do anything unless it's consumed:
+    /// toks.take(3);
+    /// assert_eq!(toks.remaining(), "abc123def");
+    ///
+    /// // This is the same as `toks.take(3).as_iter().for_each(drop);`
+    /// toks.take(3).consume();
+    /// assert_eq!(toks.remaining(), "123def");
+    ///
+    /// toks.take_while(|t| t.is_numeric()).consume();
+    /// assert_eq!(toks.remaining(), "def");
+    /// ```
+    fn consume(&mut self) {
+        self.as_iter().for_each(drop)
+    }
+
+    /// Collect up all of the tokens into something that implements
+    /// [`FromIterator`]. If you'd like to call `str::parse` on the
+    /// subsequent collection, then prefer [`Tokens::parse`], which ca
+    /// # Examplen
+    /// be more optimal in some cases.
+    ///
+    /// This is just a shorthand for calling `toks.as_iter().collect()`.
+    fn collect<B: FromIterator<Self::Item>>(&mut self) -> B {
+        self.as_iter().collect()
     }
 }
 
@@ -932,11 +1115,22 @@ pub trait IntoTokens<Item> {
 
 /// This is returned from [`Tokens::as_iter()`], and exposes the standard iterator
 /// interface and methods on our tokens.
-pub struct TokensIter<'a, T> {
+pub struct TokensAsIter<'a, T> {
     tokens: &'a mut T,
 }
+impl<'a, T: Tokens> Iterator for TokensAsIter<'a, T> {
+    type Item = T::Item;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.tokens.next()
+    }
+}
 
-impl<'a, T: Tokens> Iterator for TokensIter<'a, T> {
+/// This is returned from [`Tokens::into_iter()`], and exposes the standard iterator
+/// interface and methods on our tokens.
+pub struct TokensIntoIter<T> {
+    tokens: T,
+}
+impl<T: Tokens> Iterator for TokensIntoIter<T> {
     type Item = T::Item;
     fn next(&mut self) -> Option<Self::Item> {
         self.tokens.next()
@@ -945,6 +1139,8 @@ impl<'a, T: Tokens> Iterator for TokensIter<'a, T> {
 
 #[cfg(all(test, feature = "std"))]
 mod test {
+
+    use crate::types::IterTokens;
 
     use super::*;
 
@@ -1000,7 +1196,7 @@ mod test {
         // No input:
         let mut t = "".into_tokens();
         let abs: Vec<_> = t.many(parse_ab).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 0);
         assert_eq!(rest, vec![]);
@@ -1008,7 +1204,7 @@ mod test {
         // Invalid input after half is consumed:
         let mut t = "acabab".into_tokens();
         let abs: Vec<_> = t.many(parse_ab).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 0);
         assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
@@ -1016,7 +1212,7 @@ mod test {
         // 3 valid and then 1 half-invalid:
         let mut t = "abababaa".into_tokens();
         let abs: Vec<_> = t.many(parse_ab).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 3);
         assert_eq!(rest, vec!['a', 'a']);
@@ -1024,7 +1220,7 @@ mod test {
         // End of tokens before can parse the fourth:
         let mut t = "abababa".into_tokens();
         let abs: Vec<_> = t.many(parse_ab).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs.len(), 3);
         assert_eq!(rest, vec!['a']);
@@ -1036,7 +1232,7 @@ mod test {
         // No input:
         let mut t = "".into_tokens();
         let abs: Vec<_> = t.many_err(parse_ab_err).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs, vec![Err(ABErr::NotEnoughTokens)]);
         assert_eq!(rest, vec![]);
@@ -1044,7 +1240,7 @@ mod test {
         // Invalid input immediately:
         let mut t = "ccabab".into_tokens();
         let abs: Vec<_> = t.many_err(parse_ab_err).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs, vec![Err(ABErr::IsNotA)]);
         assert_eq!(rest, vec!['c', 'c', 'a', 'b', 'a', 'b']);
@@ -1052,7 +1248,7 @@ mod test {
         // Invalid input after half is consumed:
         let mut t = "acabab".into_tokens();
         let abs: Vec<_> = t.many_err(parse_ab_err).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs, vec![Err(ABErr::IsNotB)]);
         assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
@@ -1060,7 +1256,7 @@ mod test {
         // 3 valid and then 1 half-invalid:
         let mut t = "abababaa".into_tokens();
         let abs: Vec<_> = t.many_err(parse_ab_err).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(abs, vec![Ok(AB), Ok(AB), Ok(AB), Err(ABErr::IsNotB)]);
         assert_eq!(rest, vec!['a', 'a']);
@@ -1068,7 +1264,7 @@ mod test {
         // End of tokens before can parse the fourth:
         let mut t = "abababa".into_tokens();
         let abs: Vec<_> = t.many_err(parse_ab_err).collect();
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
 
         assert_eq!(
             abs,
@@ -1081,19 +1277,19 @@ mod test {
     fn test_skip_many() {
         let mut t = "".into_tokens();
         let n_skipped = t.skip_many(|t| parse_ab(t).is_some());
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
         assert_eq!(n_skipped, 0);
         assert_eq!(rest, vec![]);
 
         let mut t = "acabab".into_tokens();
         let n_skipped = t.skip_many(|t| parse_ab(t).is_some());
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
         assert_eq!(n_skipped, 0);
         assert_eq!(rest, vec!['a', 'c', 'a', 'b', 'a', 'b']);
 
         let mut t = "ababaab".into_tokens();
         let n_skipped = t.skip_many(|t| parse_ab(t).is_some());
-        let rest: Vec<char> = t.as_iter().collect();
+        let rest: Vec<char> = t.collect();
         assert_eq!(n_skipped, 2);
         assert_eq!(rest, vec!['a', 'a', 'b']);
     }
@@ -1102,26 +1298,102 @@ mod test {
     fn test_skip_many1() {
         let mut t = "".into_tokens();
         let res = t.skip_many1(parse_ab_err);
-        let rest: String = t.as_iter().collect();
+        let rest: String = t.collect();
         assert_eq!(res, Err(ABErr::NotEnoughTokens));
         assert_eq!(&*rest, "");
 
         let mut t = "acabab".into_tokens();
         let res = t.skip_many1(parse_ab_err);
-        let rest: String = t.as_iter().collect();
+        let rest: String = t.collect();
         assert_eq!(res, Err(ABErr::IsNotB));
         assert_eq!(&*rest, "acabab");
 
         let mut t = "abcbab".into_tokens();
         let res = t.skip_many1(parse_ab_err);
-        let rest: String = t.as_iter().collect();
+        let rest: String = t.collect();
         assert_eq!(res, Ok(1));
         assert_eq!(&*rest, "cbab");
 
         let mut t = "ababcbab".into_tokens();
         let res = t.skip_many1(parse_ab_err);
-        let rest: String = t.as_iter().collect();
+        let rest: String = t.collect();
         assert_eq!(res, Ok(2));
         assert_eq!(&*rest, "cbab");
+    }
+
+    #[test]
+    fn test_parse_optimisations() {
+        // Our test string.
+        const S: &str = "345abc456";
+
+        fn parse_slice(mut tokens: impl Tokens<Item = char>) {
+            // Get a start and end location to use:
+            let from = tokens.location();
+            tokens.take_while(|t| t.is_numeric()).consume();
+            let to = tokens.location();
+            tokens.set_location(from.clone());
+
+            // This should work (nothing will be consumed)
+            let n = tokens
+                .parse_slice::<u16, String>(from.clone(), to.clone())
+                .unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.collect::<String>(), S);
+
+            // reset location
+            tokens.set_location(from.clone());
+
+            // This won't work (again nothing will be consumed)
+            tokens.parse_slice::<u8, String>(from, to).unwrap_err();
+            assert_eq!(tokens.collect::<String>(), S);
+        }
+
+        fn parse_take_while(mut tokens: impl Tokens<Item = char>) {
+            let start = tokens.location();
+
+            // This should work
+            let n = tokens
+                .parse_take_while::<u16, String, _>(|t| t.is_numeric())
+                .unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.collect::<String>(), "abc456");
+
+            // reset location
+            tokens.set_location(start);
+
+            // This wont work and won't consume anything
+            tokens
+                .parse_take_while::<u8, String, _>(|t| t.is_numeric())
+                .unwrap_err();
+            assert_eq!(tokens.collect::<String>(), "345abc456");
+        }
+
+        fn parse_take(mut tokens: impl Tokens<Item = char>) {
+            let start = tokens.location();
+
+            // This should work
+            let n = tokens.parse_take::<u16, String>(3).unwrap();
+            assert_eq!(n, 345);
+            assert_eq!(tokens.collect::<String>(), "abc456");
+
+            // reset location
+            tokens.set_location(start);
+
+            // This wont work and won't consume anything
+            tokens.parse_take::<u8, String>(3).unwrap_err();
+            assert_eq!(tokens.collect::<String>(), "345abc456");
+        }
+
+        // Test each method against our "optimised" StrTokens
+        // and also the default impl of the methods via IterTokens
+
+        parse_slice(IterTokens::new(S.chars()));
+        parse_slice(S.into_tokens());
+
+        parse_take_while(IterTokens::new(S.chars()));
+        parse_take_while(S.into_tokens());
+
+        parse_take(IterTokens::new(S.chars()));
+        parse_take(S.into_tokens());
     }
 }
