@@ -193,7 +193,7 @@ impl<'a> Tokens for StrTokens<'a> {
     {
         // Consume the n tokens.
         let from = self.location();
-        self.take(n).as_iter().for_each(drop);
+        self.take(n).consume();
         let to = self.location();
 
         let res = self.str[from.0..to.0].parse();
@@ -216,7 +216,7 @@ impl<'a> Tokens for StrTokens<'a> {
     {
         // Consume all of the tokens matching the function.
         let from = self.location();
-        self.take_while(take_while).as_iter().for_each(drop);
+        self.take_while(take_while).consume();
         let to = self.location();
 
         let res = self.str[from.0..to.0].parse();

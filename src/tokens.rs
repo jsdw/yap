@@ -1056,6 +1056,32 @@ pub trait Tokens: Sized {
         self.optional(|t| t.next().is_none().then_some(()))
             .is_some()
     }
+
+    /// Consume all remaining tokens. This is expected to be used in conjunction
+    /// with combinators like[`Tokens::take`] and [`Tokens::take_while`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use yap::{Tokens, IntoTokens};
+    ///
+    /// let mut toks = "abc123def".into_tokens();
+    ///
+    /// // Take won't do anything unless it's consumed:
+    /// toks.take(3);
+    /// assert_eq!(toks.remaining(), "abc123def");
+    ///
+    /// // We can consume it like a normal iterator, or we
+    /// // can just use this consume call to drain it:
+    /// toks.take(3).consume();
+    /// assert_eq!(toks.remaining(), "123def");
+    ///
+    /// toks.take_while(|t| t.is_numeric()).consume();
+    /// assert_eq!(toks.remaining(), "def");
+    /// ```
+    fn consume(&mut self) {
+        while self.next().is_some() {}
+    }
 }
 
 /// Calling [`Tokens::location()`] returns an object that implements this trait.

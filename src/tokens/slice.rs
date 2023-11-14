@@ -4,7 +4,6 @@ use crate::Tokens;
 pub struct Slice<'a, T: Tokens> {
     tokens: &'a mut T,
     original: T::Location,
-    started: bool,
     from: T::Location,
     to: T::Location,
 }
@@ -16,12 +15,14 @@ impl<'a, T: Tokens> Slice<'a, T> {
         from: T::Location,
         to: T::Location,
     ) -> Slice<'a, T> {
+        // shift tokens to the start location. Dropping
+        // this will reset them back to the original one.
+        tokens.set_location(from.clone());
         Slice {
             tokens,
-            original: current,
             from,
+            original: current,
             to,
-            started: false,
         }
     }
 }
@@ -32,14 +33,6 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
     type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Initial prep:
-        if !self.started {
-            self.tokens.set_location(self.from.clone());
-            self.started = true;
-        }
-
-        // Once we hit the "to" location we return None
-        // (this isn't an inclusive iterator).
         if self.tokens.is_at_location(&self.to) {
             None
         } else {
@@ -56,7 +49,7 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
         self.tokens.is_at_location(location)
     }
 
-    // Delegate to root Tokens impl to allow optimisation.
+    // Allow toks.slice(..).parse(..) to be optimised.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
@@ -68,7 +61,7 @@ impl<'a, T: Tokens> Tokens for Slice<'a, T> {
         // If the underlying parse worked, then "consume" the slice in case
         // we try using it again. If it didn't work then leave as is.
         if res.is_ok() {
-            self.from = self.to.clone();
+            self.set_location(self.to.clone());
         }
         res
     }
@@ -92,14 +85,20 @@ mod test {
 
         // get locations for testing:
         let from = toks.location();
-        toks.take_while(|t| t.is_numeric()).as_iter().for_each(drop);
+        toks.take_while(|t| t.is_numeric()).consume();
         let to = toks.location();
 
-        let mut s = toks.slice(from, to);
+        // Advance 1 beyond the slice end:
+        toks.take(1).consume();
 
+        let mut s = toks.slice(from, to);
         let n = s.parse::<u16, String>().unwrap();
         assert_eq!(n, 345);
         assert_eq!(s.as_iter().collect::<String>(), "");
+
+        // We should be where we were originally (1 after slice)
+        drop(s);
+        assert_eq!(toks.as_iter().collect::<String>(), "bc");
     }
 
     #[test]
@@ -108,12 +107,19 @@ mod test {
 
         // get locations for testing:
         let from = toks.location();
-        toks.take_while(|t| t.is_numeric()).as_iter().for_each(drop);
+        toks.take_while(|t| t.is_numeric()).consume();
         let to = toks.location();
 
-        let mut s = toks.slice(from, to);
+        // Advance 1 beyond the slice end:
+        toks.take(1).consume();
 
+        // Try the slice:
+        let mut s = toks.slice(from, to);
         s.parse::<u8, String>().unwrap_err();
         assert_eq!(s.as_iter().collect::<String>(), "345");
+
+        // We should be where we were originally (1 after slice)
+        drop(s);
+        assert_eq!(toks.as_iter().collect::<String>(), "bc");
     }
 }
