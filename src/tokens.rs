@@ -1013,17 +1013,6 @@ pub trait Tokens: Sized {
         }
     }
 
-    /// Parses a line ending of either `\n` (like on linux)  or `\r\n` (like on windows).
-    /// Returns a static string equal to the line ending parsed, or `None` if no line
-    /// ending is seen at this location.
-    fn line_ending(&mut self) -> Option<&'static str>
-    where
-        Self: Tokens<Item = char>,
-    {
-        self.optional(|t| t.token('\n').then_some("\n"))
-            .or_else(|| self.optional(|t| t.tokens("\r\n".chars()).then_some("\r\n")))
-    }
-
     /// Checks next input is [`None`] and, if true, consumes the `None`.
     ///
     /// # Example
