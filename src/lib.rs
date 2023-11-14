@@ -82,7 +82,7 @@ let op_or_digit = tokens.sep_by_all(
 // Now we've parsed our input into OpOrDigits, let's calculate the result..
 let mut current_op = Op::Plus;
 let mut current_digit = 0;
-for d in op_or_digit {
+for d in op_or_digit.into_iter() {
     match d {
         OpOrDigit::Op(op) => {
             current_op = op

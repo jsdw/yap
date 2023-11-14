@@ -114,7 +114,7 @@ mod test {
 
         let n = tw.parse::<u16, String>().unwrap();
         assert_eq!(n, 345);
-        assert_eq!(tw.as_iter().collect::<String>(), "");
+        assert_eq!(tw.collect::<String>(), "");
     }
 
     #[test]
@@ -124,7 +124,7 @@ mod test {
         let mut tw = toks.take(3);
 
         tw.parse::<u8, String>().unwrap_err();
-        assert_eq!(tw.as_iter().collect::<String>(), "345");
+        assert_eq!(tw.collect::<String>(), "345");
     }
 
     #[test]
@@ -132,20 +132,16 @@ mod test {
         const TOKS: &str = "345abc+";
 
         fn take_while(mut toks: impl Tokens<Item = char>) {
-            let s: String = toks
-                .take(6)
-                .take_while(|t| t.is_numeric())
-                .as_iter()
-                .collect();
+            let s: String = toks.take(6).take_while(|t| t.is_numeric()).collect();
 
             assert_eq!(s, "345");
-            assert_eq!(toks.as_iter().collect::<String>(), "abc+");
+            assert_eq!(toks.collect::<String>(), "abc+");
         }
         fn take(mut toks: impl Tokens<Item = char>) {
-            let s: String = toks.take(6).take(4).as_iter().collect();
+            let s: String = toks.take(6).take(4).collect();
 
             assert_eq!(s, "345a");
-            assert_eq!(toks.as_iter().collect::<String>(), "bc+");
+            assert_eq!(toks.collect::<String>(), "bc+");
         }
 
         take_while(TOKS.into_tokens());

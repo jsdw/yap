@@ -94,11 +94,11 @@ mod test {
         let mut s = toks.slice(from, to);
         let n = s.parse::<u16, String>().unwrap();
         assert_eq!(n, 345);
-        assert_eq!(s.as_iter().collect::<String>(), "");
+        assert_eq!(s.collect::<String>(), "");
 
         // We should be where we were originally (1 after slice)
         drop(s);
-        assert_eq!(toks.as_iter().collect::<String>(), "bc");
+        assert_eq!(toks.collect::<String>(), "bc");
     }
 
     #[test]
@@ -116,10 +116,10 @@ mod test {
         // Try the slice:
         let mut s = toks.slice(from, to);
         s.parse::<u8, String>().unwrap_err();
-        assert_eq!(s.as_iter().collect::<String>(), "345");
+        assert_eq!(s.collect::<String>(), "345");
 
         // We should be where we were originally (1 after slice)
         drop(s);
-        assert_eq!(toks.as_iter().collect::<String>(), "bc");
+        assert_eq!(toks.collect::<String>(), "bc");
     }
 }

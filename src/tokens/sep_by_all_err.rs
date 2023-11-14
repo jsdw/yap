@@ -24,13 +24,14 @@ impl<'a, T: Tokens, F, S, Output> SepByAllErr<'a, T, F, S, Output> {
     }
 }
 
-impl<'a, T, F, S, Output, E> Iterator for SepByAllErr<'a, T, F, S, Output>
+impl<'a, T, F, S, Output, E> Tokens for SepByAllErr<'a, T, F, S, Output>
 where
     T: Tokens,
     F: FnMut(&mut T) -> Result<Output, E>,
     S: FnMut(&mut T) -> Option<Output>,
 {
     type Item = Result<Output, E>;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -84,5 +85,14 @@ where
             }
         };
         Some(Ok(sep))
+    }
+    fn location(&self) -> Self::Location {
+        self.tokens.location()
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        self.tokens.set_location(location)
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.tokens.is_at_location(location)
     }
 }

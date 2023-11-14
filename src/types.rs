@@ -519,10 +519,7 @@ mod tests {
 
         // Find locations to the number:
         let from = tokens.location();
-        tokens
-            .take_while(|t| t.is_numeric())
-            .as_iter()
-            .for_each(drop);
+        tokens.take_while(|t| t.is_numeric()).consume();
         let to = tokens.location();
 
         let n = tokens

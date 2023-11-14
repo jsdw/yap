@@ -18,12 +18,13 @@ impl<'a, T, F> ManyErr<'a, T, F> {
     }
 }
 
-impl<'a, T, F, E, Output> Iterator for ManyErr<'a, T, F>
+impl<'a, T, F, E, Output> Tokens for ManyErr<'a, T, F>
 where
     T: Tokens,
     F: FnMut(&mut T) -> Result<Output, E>,
 {
     type Item = Result<Output, E>;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -40,5 +41,14 @@ where
                 Some(Err(e))
             }
         }
+    }
+    fn location(&self) -> Self::Location {
+        self.tokens.location()
+    }
+    fn set_location(&mut self, location: Self::Location) {
+        self.tokens.set_location(location)
+    }
+    fn is_at_location(&self, location: &Self::Location) -> bool {
+        self.tokens.is_at_location(location)
     }
 }
