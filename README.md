@@ -68,10 +68,9 @@ fn parse_op(t: &mut impl Tokens<Item=char>) -> Option<Op> {
 
 // We also get other useful functions..
 fn parse_digits(t: &mut impl Tokens<Item=char>) -> Option<u32> {
-    let s: String = t
-        .take_while(|c| c.is_digit(10))
-        .collect();
-    s.parse().ok()
+    t.take_while(|c| c.is_digit(10))
+     .parse::<u32, String>()
+     .ok()
 }
 
 // As well as combinator functions like `sep_by_all` and `surrounded_by`..

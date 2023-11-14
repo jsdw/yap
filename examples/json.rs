@@ -342,10 +342,16 @@ fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
         return Some(Err(e));
     }
 
-    // If we get this far, we saw a valid number. Just let Rust parse it for us..
+    // If we get this far, we saw a valid number. Just let Rust parse it for us.
+    // We use a `String` buffer to accumulate the slice of tokens before parsing
+    // by default, although `StrTokens` is optimised to avoid using it in this case.
     let end = toks.location();
-    let n_str: String = toks.slice(start, end).as_iter().collect();
-    Some(Ok(n_str.parse().expect("valid number expected here")))
+    let n = toks
+        .slice(start, end)
+        .parse::<f64, String>()
+        .expect("valid number expected here");
+
+    Some(Ok(n))
 }
 
 fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {

@@ -341,6 +341,12 @@ where
     fn is_at_location(&self, location: &Self::Location) -> bool {
         self.cursor == location.0.cursor
     }
+
+    // Override the default impl to avoid a clone when calling
+    // `self.location().offset()`:
+    fn offset(&self) -> usize {
+        self.cursor
+    }
 }
 
 impl<I> IntoTokens<I::Item> for IterTokens<I>
@@ -411,6 +417,45 @@ macro_rules! with_context_impls {
             }
             fn is_at_location(&self, location: &Self::Location) -> bool {
                 self.tokens.is_at_location(location)
+            }
+
+            // allow any parse optimisations from the underlying Tokens
+            // impl to carry through to this too:
+            fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse::<Out, Buf>()
+            }
+            fn parse_slice<Out, Buf>(
+                &mut self,
+                from: Self::Location,
+                to: Self::Location,
+            ) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse_slice::<Out, Buf>(from, to)
+            }
+            fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+            {
+                self.tokens.parse_take::<Out, Buf>(n)
+            }
+            fn parse_take_while<Out, Buf, F>(
+                &mut self,
+                take_while: F,
+            ) -> Result<Out, <Out as core::str::FromStr>::Err>
+            where
+                Out: core::str::FromStr,
+                Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+                F: FnMut(&Self::Item) -> bool,
+            {
+                self.tokens.parse_take_while::<Out, Buf, F>(take_while)
             }
         }
     }
@@ -511,5 +556,21 @@ mod tests {
 
         assert_eq!(n, 123);
         assert_eq!(tokens.remaining(), "abc");
+
+        // 4. take(..).take_while(..).take(..).parse()
+
+        let mut tokens = "123ab+=".into_tokens();
+
+        let n = tokens
+            .take(6)
+            .take(5)
+            .take_while(|t| t.is_alphanumeric())
+            .take_while(|t| t.is_numeric())
+            .take(2)
+            .parse::<u16, BadBuffer>()
+            .expect("parse worked (4)");
+
+        assert_eq!(n, 12);
+        assert_eq!(tokens.remaining(), "3ab+=");
     }
 }

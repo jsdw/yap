@@ -13,11 +13,12 @@ impl<'a, T> Take<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for Take<'a, T>
+impl<'a, T> Tokens for Take<'a, T>
 where
     T: Tokens,
 {
     type Item = T::Item;
+    type Location = T::Location;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.n == 0 {
@@ -30,18 +31,6 @@ where
         // to continue calling this after None comes
         // back.
         self.tokens.next()
-    }
-}
-
-impl<'a, T> Tokens for Take<'a, T>
-where
-    T: Tokens,
-{
-    type Item = T::Item;
-    type Location = T::Location;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Iterator::next(self)
     }
 
     fn location(&self) -> Self::Location {
@@ -56,7 +45,7 @@ where
         self.tokens.is_at_location(location)
     }
 
-    // Delegate to root Tokens impl to allow optimisation.
+    // Allow toks.take(..).parse(..) to be optimised.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
@@ -70,11 +59,52 @@ where
         }
         res
     }
+    // Allow toks.take(..).take_while(..).parse(..) to be optimised.
+    fn parse_take_while<Out, Buf, F2>(
+        &mut self,
+        mut take_while: F2,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+        F2: FnMut(&Self::Item) -> bool,
+    {
+        let mut n = self.n;
+        let res = self.tokens.parse_take_while::<Out, Buf, _>(|t| {
+            // Go until we run out of items from this take() or if the take_while
+            // fn returns false.
+            let res = n > 0 && take_while(t);
+            n = n.saturating_sub(1);
+            res
+        });
+
+        // If this works, then we don't have so many tokens left to iter here:
+        if res.is_ok() {
+            self.n = n;
+        }
+        res
+    }
+    // Allow toks.take(..).take(..).parse(..) to be optimised.
+    fn parse_take<Out, Buf>(&mut self, n: usize) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        // If we call take().take(), just use the minimum of the two n's.
+        let min_n = usize::min(self.n, n);
+        let res = self.tokens.parse_take::<Out, Buf>(min_n);
+
+        // If this works, then we don't have so many tokens left to iter here:
+        if res.is_ok() {
+            self.n -= min_n;
+        }
+        res
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{IntoTokens, Tokens};
+    use crate::{types::IterTokens, IntoTokens, Tokens};
 
     #[test]
     fn test_parse_success() {
@@ -95,5 +125,33 @@ mod test {
 
         tw.parse::<u8, String>().unwrap_err();
         assert_eq!(tw.as_iter().collect::<String>(), "345");
+    }
+
+    #[test]
+    fn test_combinator_stacking_optimisations() {
+        const TOKS: &str = "345abc+";
+
+        fn take_while(mut toks: impl Tokens<Item = char>) {
+            let s: String = toks
+                .take(6)
+                .take_while(|t| t.is_numeric())
+                .as_iter()
+                .collect();
+
+            assert_eq!(s, "345");
+            assert_eq!(toks.as_iter().collect::<String>(), "abc+");
+        }
+        fn take(mut toks: impl Tokens<Item = char>) {
+            let s: String = toks.take(6).take(4).as_iter().collect();
+
+            assert_eq!(s, "345a");
+            assert_eq!(toks.as_iter().collect::<String>(), "bc+");
+        }
+
+        take_while(TOKS.into_tokens());
+        take_while(IterTokens::new(TOKS.chars()));
+
+        take(TOKS.into_tokens());
+        take(IterTokens::new(TOKS.chars()));
     }
 }

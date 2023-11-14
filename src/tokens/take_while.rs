@@ -54,7 +54,7 @@ where
         self.tokens.is_at_location(location)
     }
 
-    // Delegate to root Tokens impl to allow optimisation.
+    // Allow toks.take_while(..).parse(..) to be optimised.
     fn parse<Out, Buf>(&mut self) -> Result<Out, <Out as core::str::FromStr>::Err>
     where
         Out: core::str::FromStr,
@@ -64,17 +64,48 @@ where
             .tokens
             .parse_take_while::<Out, Buf, _>(&mut self.take_while);
         // Assume that underlying token location has been updated properly,
-        // but we still need to update our state here accordingly:
+        // Avoid doing another check here, assuming that it's complete now anyway.
         if res.is_ok() {
             self.done = true;
         }
         res
     }
+    // Allow toks.take_while(..).take_while(..).parse(..) to be optimised.
+    fn parse_take_while<Out, Buf, F2>(
+        &mut self,
+        mut take_while: F2,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+        F2: FnMut(&Self::Item) -> bool,
+    {
+        self.tokens.parse_take_while::<Out, Buf, _>(|t| {
+            // Only take while this and the child's take_while fn are both true.
+            (self.take_while)(t) && take_while(t)
+        })
+    }
+    // Allow toks.take_while(..).take(..).parse(..) to be optimised.
+    fn parse_take<Out, Buf>(
+        &mut self,
+        mut n: usize,
+    ) -> Result<Out, <Out as core::str::FromStr>::Err>
+    where
+        Out: core::str::FromStr,
+        Buf: FromIterator<Self::Item> + core::ops::Deref<Target = str>,
+    {
+        self.tokens.parse_take_while::<Out, Buf, _>(|t| {
+            // Only take while this take_while fn is true for up to n tokens.
+            let r = n != 0 && (self.take_while)(t);
+            n = n.saturating_sub(1);
+            r
+        })
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{IntoTokens, Tokens};
+    use crate::{types::IterTokens, IntoTokens, Tokens};
 
     #[test]
     fn test_parse_success() {
@@ -95,5 +126,37 @@ mod test {
 
         tw.parse::<u8, String>().unwrap_err();
         assert_eq!(tw.as_iter().collect::<String>(), "345");
+    }
+
+    #[test]
+    fn test_combinator_stacking_optimisations() {
+        const TOKS: &str = "345abc+";
+
+        fn take_while(mut toks: impl Tokens<Item = char>) {
+            let s: String = toks
+                .take_while(|t| t.is_alphanumeric())
+                .take_while(|t| t.is_numeric())
+                .as_iter()
+                .collect();
+
+            assert_eq!(s, "345");
+            assert_eq!(toks.as_iter().collect::<String>(), "abc+");
+        }
+        fn take(mut toks: impl Tokens<Item = char>) {
+            let s: String = toks
+                .take_while(|t| t.is_alphanumeric())
+                .take(4)
+                .as_iter()
+                .collect();
+
+            assert_eq!(s, "345a");
+            assert_eq!(toks.as_iter().collect::<String>(), "bc+");
+        }
+
+        take_while(TOKS.into_tokens());
+        take_while(IterTokens::new(TOKS.chars()));
+
+        take(TOKS.into_tokens());
+        take(IterTokens::new(TOKS.chars()));
     }
 }
