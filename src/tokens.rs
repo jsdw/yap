@@ -1073,8 +1073,7 @@ pub trait Tokens: Sized {
 
     /// Collect up all of the tokens into something that implements
     /// [`FromIterator`]. If you'd like to call `str::parse` on the
-    /// subsequent collection, then prefer [`Tokens::parse`], which ca
-    /// # Examplen
+    /// subsequent collection, then prefer [`Tokens::parse`], which can
     /// be more optimal in some cases.
     ///
     /// This is just a shorthand for calling `toks.as_iter().collect()`.
