@@ -296,12 +296,11 @@ fn null(toks: &mut impl Tokens<Item = char>) -> bool {
     toks.tokens("null".chars())
 }
 
-/// Numbers are maybe the most difficult thing to parse. Here, we store the start
-/// location and then skip over tokens as long as they are what we expect, bailing with
-/// `None` if something isn't right. At the end, we gather all of the tokens we skipped
-/// over at once and parse them into a number.
+/// Parse numbers. Here, we store the start location and then skip over tokens as long
+/// as they are what we expect, bailing with `None` if something isn't right. At the end,
+/// we gather all of the tokens we skipped over at once and parse them into a number.
 ///
-/// A better parser could return specific errors depending on where we failed in our parsing.
+/// See `CharTokens::f64` for more correct float parsing.
 fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
     let start = toks.location();
 
