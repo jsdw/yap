@@ -954,7 +954,7 @@ pub trait Tokens: Sized {
         Output: crate::one_of::IsMatch,
     {
         let location = self.location();
-        if let Some(output) = f(self).is_match() {
+        if let Some(output) = f(self).into_match() {
             output
         } else {
             self.set_location(location);

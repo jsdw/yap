@@ -1,5 +1,5 @@
 /// Pass the provided tokens into each expression, one after the other. All of the
-/// expressions provided must return something implementing [`crate::one_of::OneOf`],
+/// expressions provided must return something implementing [`crate::one_of::IsMatch`],
 /// ie `Option<T>` or `bool`. It will try each expression until a match is found,
 /// consuming no tokens for any expressions that to not match.
 ///
@@ -79,7 +79,7 @@ macro_rules! one_of {
                 let checkpoint = $tokens.location();
                 {
                     let $tokens = &mut *$tokens;
-                    if let Some(res) = $crate::one_of::IsMatch::is_match($e) {
+                    if let Some(res) = $crate::one_of::IsMatch::into_match($e) {
                         break res
                     }
                 }
@@ -95,7 +95,7 @@ macro_rules! one_of {
                 let checkpoint = $tokens.location();
                 {
                     let $alias = &mut *$tokens;
-                    if let Some(res) = $crate::one_of::IsMatch::is_match($e) {
+                    if let Some(res) = $crate::one_of::IsMatch::into_match($e) {
                         break res;
                     }
                 }
@@ -106,13 +106,13 @@ macro_rules! one_of {
     }};
 }
 
-/// This is implemented for types that can be returned in expressions
-/// given to [`crate::one_of`].
+/// Implementing this for some type allows the type to be returned from
+/// expressions in [`crate::one_of!`], and [`crate::Tokens::optional`].
 pub trait IsMatch: Sized {
     /// Return `Some(Self)` if `Self` denotes that we've found a
     /// match, and return `None` if `one_of` should try the next
     /// expression.
-    fn is_match(self) -> Option<Self>;
+    fn into_match(self) -> Option<Self>;
     /// If `one_of` fails to find a match, it will return this.
     fn match_failure() -> Self;
 }
@@ -121,10 +121,10 @@ pub trait IsMatch: Sized {
 // true means we found a match, and false means keep
 // looking.
 impl IsMatch for bool {
-    fn is_match(self) -> Option<Self> {
+    fn into_match(self) -> Option<Self> {
         match self {
             true => Some(true),
-            false => None
+            false => None,
         }
     }
     fn match_failure() -> Self {
@@ -134,12 +134,9 @@ impl IsMatch for bool {
 
 // one_of can work with Options; Some(item) means
 // that we found a match, and None means keep looking.
-impl <T> IsMatch for Option<T> {
-    fn is_match(self) -> Option<Self> {
-        match self {
-            Some(i) => Some(Some(i)),
-            None => None
-        }
+impl<T> IsMatch for Option<T> {
+    fn into_match(self) -> Option<Self> {
+        self.map(Some)
     }
     fn match_failure() -> Self {
         None

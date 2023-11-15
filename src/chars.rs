@@ -48,7 +48,7 @@ pub fn line_ending<T: Tokens<Item = char>>(t: &mut T) -> Option<&'static str> {
 ///
 /// Note that alphabetical characters are not case-sensitive.
 ///
-/// More specifically, all strings that adhere to the following [EBNF] grammar when
+/// More specifically, all strings that adhere to the following EBNF grammar when
 /// lowercased will be consumed, and `true` returned:
 ///
 /// ```txt
@@ -120,12 +120,12 @@ pub fn float<T: Tokens<Item = char>>(t: &mut T) -> bool {
     fn number_with_exp(t: &mut impl Tokens<Item = char>) -> bool {
         t.optional(|t| {
             if !number(t) {
-                return false
+                return false;
             }
             if case_insensitive_eq(t, "e") {
                 sign(t);
                 if !digits(t) {
-                    return false
+                    return false;
                 }
             }
             true
@@ -140,14 +140,14 @@ pub fn float<T: Tokens<Item = char>>(t: &mut T) -> bool {
                 // If there's a point, we're happy as long as d1 or d2
                 // actually contain some digits:
                 d1 || d2
-            } else{
+            } else {
                 // If there's no point then d1 needs to contain digits:
                 d1
             }
         })
     }
     fn digits(t: &mut impl Tokens<Item = char>) -> bool {
-        t.skip_while(|c| c.is_digit(10)) > 0
+        t.skip_while(|c| c.is_ascii_digit()) > 0
     }
 
     sign(t);
@@ -192,14 +192,14 @@ pub fn case_insensitive_eq<T: Tokens<Item = char>>(t: &mut T, s: &str) -> bool {
                         (None, None) => break,
                         _ => {
                             t.set_location(start_loc);
-                            return false
+                            return false;
                         }
                     }
                 }
-            },
+            }
             _ => {
                 t.set_location(start_loc);
-                return false
+                return false;
             }
         }
     }
