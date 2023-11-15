@@ -53,7 +53,7 @@ pub trait CharTokens: Tokens<Item = char> {
     /// ```
     fn parse_f64<B>(&mut self) -> Option<f64>
     where
-        B: std::iter::FromIterator<char> + std::ops::Deref<Target = str>,
+        B: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
     {
         parse_f::<_, f64, B, _>(self)
     }
@@ -77,7 +77,7 @@ pub trait CharTokens: Tokens<Item = char> {
     /// ```
     fn parse_f32<B>(&mut self) -> Option<f32>
     where
-        B: std::iter::FromIterator<char> + std::ops::Deref<Target = str>,
+        B: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
     {
         parse_f::<_, f32, B, _>(self)
     }
@@ -115,7 +115,7 @@ pub trait CharTokens: Tokens<Item = char> {
     ///
     /// ```
     /// use yap::{Tokens, IntoTokens, CharTokens};
-    /// use std::str::FromStr;
+    /// use core::str::FromStr;
     ///
     /// // These will all be fully consumed as valid floats:
     /// let valid_numbers = [
@@ -263,9 +263,9 @@ impl<T: Tokens<Item = char>> CharTokens for T {}
 fn parse_f<T: Tokens<Item = char>, F, B, E>(t: &mut T) -> Option<F>
 where
     T: Tokens<Item = char>,
-    F: std::str::FromStr<Err = E>,
-    E: std::fmt::Debug,
-    B: std::iter::FromIterator<char> + std::ops::Deref<Target = str>,
+    F: core::str::FromStr<Err = E>,
+    E: core::fmt::Debug,
+    B: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
 {
     let l1 = t.location();
     if !CharTokens::float(t) {
