@@ -1,9 +1,12 @@
-/// Pass the provided tokens into each expression, one after the other. Each
-/// expression is expected to return some `Option<T>`, where `T` must be the same
-/// across all expressions, and can be a simple value or a `Result` or anything else.
-/// If an expression returns `None`, no tokens are consumed and it will try the next
-/// expression. If the expression returns `Some(T)`, the macro will exit and hand that
-/// back, consuming any tokens used to obtain it.
+/// Pass the provided tokens into each expression, one after the other. All of the
+/// expressions provided must return something implementing [`crate::one_of::OneOf`],
+/// ie `Option<T>` or `bool`. It will try each expression until a match is found,
+/// consuming no tokens for any expressions that to not match.
+///
+/// - If expressions return `Option<T>`, then `Some(T)` denotes that we've found a match
+///   and can return it, and `None` means that one_of should try the next expression.
+/// - If expressions return `bool`, then returning true denotes that we've found a match
+///   and returning `false` means to try the next expression.
 ///
 /// # Examples
 ///
@@ -47,20 +50,22 @@
 /// assert_eq!(tokens.remaining(), " world");
 /// ```
 ///
-/// If an expression returns `None`, no tokens will be consumed:
+/// We can return bools too, for when we want to find out whether something
+/// matches but don't care what exactly has been matched:
 ///
 /// ```
 /// use yap::{ Tokens, IntoTokens };
 ///
 /// let mut tokens = "hello world".into_tokens();
 ///
-/// let res: Option<()> = yap::one_of!(ts from &mut tokens;
-///     // No tokens will be consumed running this since `None` is returned:
-///     { ts.next(); ts.next(); None },
+/// let res: bool = yap::one_of!(ts from &mut tokens;
+///     ts.tokens("howdy".chars()),
+///     ts.tokens("bye".chars()),
+///     ts.tokens("hello".chars()),
 /// );
 ///
-/// assert_eq!(res, None);
-/// assert_eq!(tokens.remaining(), "hello world");
+/// assert_eq!(res, true);
+/// assert_eq!(tokens.remaining(), " world");
 /// ```
 ///
 /// Expressions can return `Result`s inside the `Option` too (or anything else that they wish),
@@ -74,13 +79,13 @@ macro_rules! one_of {
                 let checkpoint = $tokens.location();
                 {
                     let $tokens = &mut *$tokens;
-                    if let Some(res) = $e {
-                        break Some(res);
+                    if let Some(res) = $crate::one_of::IsMatch::is_match($e) {
+                        break res
                     }
                 }
                 $tokens.set_location(checkpoint);
             )+
-            break None;
+            break $crate::one_of::IsMatch::match_failure();
         }
     }};
     ($alias:ident from $tokens:expr; $( $e:expr ),+ $(,)?) => {{
@@ -90,15 +95,55 @@ macro_rules! one_of {
                 let checkpoint = $tokens.location();
                 {
                     let $alias = &mut *$tokens;
-                    if let Some(res) = $e {
-                        break Some(res);
+                    if let Some(res) = $crate::one_of::IsMatch::is_match($e) {
+                        break res;
                     }
                 }
                 $tokens.set_location(checkpoint);
             )+
-            break None;
+            break $crate::one_of::IsMatch::match_failure();
         }
     }};
+}
+
+/// This is implemented for types that can be returned in expressions
+/// given to [`crate::one_of`].
+pub trait IsMatch: Sized {
+    /// Return `Some(Self)` if `Self` denotes that we've found a
+    /// match, and return `None` if `one_of` should try the next
+    /// expression.
+    fn is_match(self) -> Option<Self>;
+    /// If `one_of` fails to find a match, it will return this.
+    fn match_failure() -> Self;
+}
+
+// one_of can work with things that return bools;
+// true means we found a match, and false means keep
+// looking.
+impl IsMatch for bool {
+    fn is_match(self) -> Option<Self> {
+        match self {
+            true => Some(true),
+            false => None
+        }
+    }
+    fn match_failure() -> Self {
+        false
+    }
+}
+
+// one_of can work with Options; Some(item) means
+// that we found a match, and None means keep looking.
+impl <T> IsMatch for Option<T> {
+    fn is_match(self) -> Option<Self> {
+        match self {
+            Some(i) => Some(Some(i)),
+            None => None
+        }
+    }
+    fn match_failure() -> Self {
+        None
+    }
 }
 
 #[cfg(test)]
