@@ -38,6 +38,11 @@ pub trait CharTokens: Tokens<Item = char> {
     /// them and return them as an [`f64`]. Else, don't consume anything and
     /// return `None`.
     ///
+    /// Like [`Tokens::parse`], the generic parameter indicates the type of buffer that
+    /// may be used to collect tokens prior to parsing. Implementations like
+    /// [`crate::types::StrTokens`] have optimisations to avoid needing this buffer in
+    /// many cases.
+    ///
     /// Use [`CharTokens::float`] if you want to consume the tokens but don't want to parse
     /// them into an f32 or f64.
     ///
@@ -61,6 +66,11 @@ pub trait CharTokens: Tokens<Item = char> {
     /// If the next tokens are a valid floating point number, then consume
     /// them and return them as an [`f32`]. Else, don't consume anything and
     /// return `None`.
+    ///
+    /// Like [`Tokens::parse`], the generic parameter indicates the type of buffer that
+    /// may be used to collect tokens prior to parsing. Implementations like
+    /// [`crate::types::StrTokens`] have optimisations to avoid needing this buffer in
+    /// many cases.
     ///
     /// Use [`CharTokens::float`] if you want to consume the tokens but don't want to parse
     /// them into an f32 or f64.
