@@ -34,13 +34,13 @@ pub trait CharTokens: Tokens<Item = char> {
             .or_else(|| self.optional(|t| t.tokens("\r\n".chars()).then_some("\r\n")))
     }
 
-    /// If the next tokens are a valid floating point number, then consume
+    /// If the next tokens are a valid Rust floating point number, then consume
     /// them and return them as an [`f64`]. Else, don't consume anything and
     /// return `None`.
     ///
-    /// Like [`Tokens::parse`], the generic parameter indicates the type of buffer that
-    /// may be used to collect tokens prior to parsing. Implementations like
-    /// [`crate::types::StrTokens`] have optimisations to avoid needing this buffer in
+    /// Like [`Tokens::parse`], the generic parameter `Buf` indicates the type of buffer
+    /// that may be used to collect tokens prior to parsing. Implementations like
+    /// [`crate::types::StrTokens`] are optimised to avoid using a buffer in
     /// many cases.
     ///
     /// Use [`CharTokens::float`] if you want to consume the tokens but don't want to parse
@@ -56,20 +56,20 @@ pub trait CharTokens: Tokens<Item = char> {
     /// let n = toks.parse_f64::<String>().unwrap();
     /// assert_eq!(toks.remaining(), " hi");
     /// ```
-    fn parse_f64<B>(&mut self) -> Option<f64>
+    fn parse_f64<Buf>(&mut self) -> Option<f64>
     where
-        B: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
+        Buf: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
     {
-        parse_f::<_, f64, B, _>(self)
+        parse_f::<_, f64, Buf, _>(self)
     }
 
-    /// If the next tokens are a valid floating point number, then consume
+    /// If the next tokens are a valid Rust floating point number, then consume
     /// them and return them as an [`f32`]. Else, don't consume anything and
     /// return `None`.
     ///
-    /// Like [`Tokens::parse`], the generic parameter indicates the type of buffer that
-    /// may be used to collect tokens prior to parsing. Implementations like
-    /// [`crate::types::StrTokens`] have optimisations to avoid needing this buffer in
+    /// Like [`Tokens::parse`], the generic parameter `Buf` indicates the type of buffer
+    /// that may be used to collect tokens prior to parsing. Implementations like
+    /// [`crate::types::StrTokens`] are optimised to avoid using a buffer in
     /// many cases.
     ///
     /// Use [`CharTokens::float`] if you want to consume the tokens but don't want to parse
@@ -85,18 +85,19 @@ pub trait CharTokens: Tokens<Item = char> {
     /// let n = toks.parse_f32::<String>().unwrap();
     /// assert_eq!(toks.remaining(), " hi");
     /// ```
-    fn parse_f32<B>(&mut self) -> Option<f32>
+    fn parse_f32<Buf>(&mut self) -> Option<f32>
     where
-        B: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
+        Buf: core::iter::FromIterator<char> + core::ops::Deref<Target = str>,
     {
-        parse_f::<_, f32, B, _>(self)
+        parse_f::<_, f32, Buf, _>(self)
     }
 
     /// If the next tokens represent a base10 float that would be successfully parsed with
     /// `s.parse::<f32>()` or `s.parse::<f64>()`, then they will be consumed and `true` returned.
     /// Otherwise, `false` is returned and nothing is consumed.
     ///
-    /// Strings such as these will be consumed:
+    /// Rust float parsing is quite permissive in general. Strings such as these will be treated
+    /// as valid floats and fully consumed:
     ///
     /// * '3.14'
     /// * '-3.14'
@@ -132,7 +133,8 @@ pub trait CharTokens: Tokens<Item = char> {
     ///     "3.14",
     ///     "-3.14",
     ///     "2.5E10",
-    ///     "2.5e10",
+    ///     "2.5e-10",
+    ///     "2.5e+10",
     ///     "+3.123e12",
     ///     "5.",
     ///     ".5",
@@ -269,6 +271,9 @@ pub trait CharTokens: Tokens<Item = char> {
 
 impl<T: Tokens<Item = char>> CharTokens for T {}
 
+// Parse an f32 or f64 from the input, returning None if the input
+// did not contain a valid rust style float. This is expected to be
+// used only to parse f32s or f64s and may panic otherwise.
 #[inline(always)]
 fn parse_f<T: Tokens<Item = char>, F, B, E>(t: &mut T) -> Option<F>
 where

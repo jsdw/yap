@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use yap::{IntoTokens, TokenLocation, Tokens};
 
-/// An example JSON parser. We don't handle every case (ie proper float
+/// An example JSON parser. We don't handle every case (ie precise float
 /// parsing and proper escape and unicode sequences in strings), but this
 /// should at least provide an example of how to use `yap`.
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
     assert_eq!(parse("true"), Ok(Value::Bool(true)));
     assert_eq!(parse("1"), Ok(Value::Number(1.0)));
     assert_eq!(parse("-2.123"), Ok(Value::Number(-2.123)));
-    assert_eq!(parse("+2.123"), Ok(Value::Number(2.123)));
+    assert_eq!(parse("+2.123e0"), Ok(Value::Number(2.123)));
     assert_eq!(
         parse("\"hello\\t\\nthere\""),
         Ok(Value::String("hello\t\nthere".to_string()))
@@ -92,8 +92,6 @@ enum ErrorKind {
     InvalidEscapeChar(char),
     // the file ended while we were still parsing.
     UnexpectedEof,
-    // We expect to see a digit here while parsing a number.
-    DigitExpectedNext,
     // We didn't successfully parse any valid JSON at all.
     InvalidJson,
 }
@@ -118,7 +116,7 @@ fn value(toks: &mut impl Tokens<Item = char>) -> Result<Value, Error> {
         array(ts).map(|res| res.map(Value::Array)),
         string(ts).map(|res| res.map(Value::String)),
         object(ts).map(|res| res.map(Value::Object)),
-        number(ts).map(|res| res.map(Value::Number)),
+        number(ts).map(|v| Ok(Value::Number(v))),
         bool(ts).map(|v| Ok(Value::Bool(v))),
         null(ts).then_some(Ok(Value::Null))
     );
@@ -296,61 +294,12 @@ fn null(toks: &mut impl Tokens<Item = char>) -> bool {
     toks.tokens("null".chars())
 }
 
-/// Parse numbers. Here, we store the start location and then skip over tokens as long
-/// as they are what we expect, bailing with `None` if something isn't right. At the end,
-/// we gather all of the tokens we skipped over at once and parse them into a number.
-///
-/// See `CharTokens::f64` for more correct float parsing.
-fn number(toks: &mut impl Tokens<Item = char>) -> Option<Result<f64, Error>> {
-    let start = toks.location();
-
-    // Look for the start of a number. return None if
-    // we're not looking at a number. Consume the token
-    // if it looks like the start of a number.
-    let is_fst_number = match toks.peek()? {
-        '-' | '+' => toks.next().map(|_| false),
-        '0'..='9' => toks.next().map(|_| true),
-        _ => None,
-    }?;
-
-    // Now, skip over digits. If none, then this isn't an number unless
-    // the char above was a digit too.
-    let num_skipped = toks.skip_while(|c| c.is_numeric());
-    if num_skipped == 0 && !is_fst_number {
-        let loc = toks.location();
-        return Some(Err(ErrorKind::DigitExpectedNext.at(start, loc)));
-    }
-
-    // A number might have a '.1234' suffix, but if it doesn't, don't consume
-    // anything. If it does but something went wrong, we'll get Some(Err) back.
-    let suffix = toks.optional(|toks| {
-        if !toks.token('.') {
-            return None;
-        }
-        let num_digits = toks.skip_while(|c| c.is_numeric());
-        if num_digits == 0 {
-            let loc = toks.location();
-            Some(Err(ErrorKind::DigitExpectedNext.at(start.clone(), loc)))
-        } else {
-            Some(Ok(()))
-        }
-    });
-
-    // If we hit an error parsing the suffix, return it.
-    if let Some(Err(e)) = suffix {
-        return Some(Err(e));
-    }
-
-    // If we get this far, we saw a valid number. Just let Rust parse it for us.
-    // We use a `String` buffer to accumulate the slice of tokens before parsing
-    // by default, although `StrTokens` is optimised to avoid using it in this case.
-    let end = toks.location();
-    let n = toks
-        .slice(start, end)
-        .parse::<f64, String>()
-        .expect("valid number expected here");
-
-    Some(Ok(n))
+/// Use the [`yap::CharTokens::parse_f64`] utility function to parse
+/// anything that rust considers a valid float (which is a little more
+/// permissive than the JSON standard, actually).
+fn number(toks: &mut impl Tokens<Item = char>) -> Option<f64> {
+    use yap::CharTokens;
+    toks.parse_f64::<String>()
 }
 
 fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {
