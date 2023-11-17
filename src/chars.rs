@@ -1,4 +1,4 @@
-//! Helper functions for working with `Tokens<Item=char>`.
+//! An extension trait providing extra functions when working with `Tokens<Item=char>`.
 
 use crate::Tokens;
 
