@@ -1,8 +1,9 @@
-//! This module contains the core [`Tokens`] trait, which adds various convenience methods
-//! to the standard [`Iterator`] interface aimed at making it easy to parse the input.
+//! The point of this library. This module contains the core [`Tokens`] trait, which adds
+//! various convenience methods on top of an [`Iterator`] based interface aimed at making
+//! it easy to parse things.
 //!
-//! The [`IntoTokens`] trait is implemented for types that can be converted into something
-//! implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
+//! The [`IntoTokens`] trait is also provided, and can be implemented for types that can be
+//! converted into something implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
 mod many;
 mod many_err;
 mod sep_by;
