@@ -294,12 +294,11 @@ fn null(toks: &mut impl Tokens<Item = char>) -> bool {
     toks.tokens("null".chars())
 }
 
-/// Use the [`yap::CharTokens::parse_f64`] utility function to parse
+/// Use the [`yap::chars::parse_f64`] helper function to parse
 /// anything that rust considers a valid float (which is a little more
 /// permissive than the JSON standard, actually).
 fn number(toks: &mut impl Tokens<Item = char>) -> Option<f64> {
-    use yap::CharTokens;
-    toks.parse_f64::<String>()
+    yap::chars::parse_f64::<String>(toks)
 }
 
 fn skip_whitespace(toks: &mut impl Tokens<Item = char>) {

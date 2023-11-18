@@ -111,12 +111,11 @@ assert_eq!(remaining, ",foobar");
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod chars;
 mod tokens;
 
 #[doc(hidden)]
 pub mod one_of;
 
+pub mod chars;
 pub mod types;
-pub use chars::CharTokens;
 pub use tokens::{IntoTokens, TokenLocation, Tokens};
