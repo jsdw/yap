@@ -3,27 +3,24 @@ This small, zero-dependency crate helps you to parse input strings and slices by
 interface.
 
 The aim of this crate is to provide the sorts of functions you'd come to expect from a parser
-combinator library, but without immersing you into a world of parser combinators, and forcing you
-to use a novel return type, library-provided errors or parser-combinator based control flow. It hopes
-to sacrifice conciseness in exchange for simplicity.
+combinator library, but without immersing you into a world of parser combinators and forcing you
+to use a novel return type, library-provided errors or parser-combinator based control flow. we
+sacrifice some conciseness in exchange for simplicity.
 
 **Some specific features/goals:**
-- Lots of examples. Every function provided comes with example usage.
+- Great documentation, with examples for almost every function provided.
 - Prioritise simplicity at the cost of verbosity.
-- Be iterator-centric. Where applicable, combinators return iterators, so you can lean on the [`Iterator`]
-  interface to parse as much or as little as you want from the input, and collect up the output however
-  you wish.
+- Be iterator-centric. Where applicable, combinators return things which implement [`Tokens`]/[`Iterator`].
 - Allow user defined errors to be returned anywhere that it might make sense. Some functions have `_err`
   variants incase you need error information when they don't otherwise hand back errors for simplicity.
 - Location information should always be available, so that you can tell users where something went wrong.
-  see [`Tokens::offset`]
+  see [`Tokens::offset`] and [`Tokens::location()`].
 - Backtracking by default. Coming from Haskell's Parsec, this feels like the sensible default. It means that
-  if one of the provided parsing functions fails to parse what you asked for, it won't consume any input
-  trying.
+  if one of the provided parsing functions fails to parse something, it won't consume any input trying.
 - Expose all of the "low level" functions. You can save and rewind to locations as needed (see [`Tokens::location`]),
   and implement any of the provided functions using these primitives.
-- Aims to be "fairly quick". Avoids allocations (and allows you to do the same via the iterator-centric interface).
-  If you need "as fast as you can get", there are probably quicker alternatives.
+- Aims to be "fairly quick". Avoids allocations (and allows you to do the same via the iterator-centric interface)
+  almost everywhere. If you need "as fast as you can get", there amay be quicker alternatives.
 
 Have a look at the [`Tokens`] trait for all of the parsing methods made available, and examples for each.
 
@@ -111,8 +108,10 @@ assert_eq!(remaining, ",foobar");
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-mod one_of;
 mod tokens;
+
+#[doc(hidden)]
+pub mod one_of;
 
 pub mod chars;
 pub mod types;

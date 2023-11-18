@@ -1,8 +1,9 @@
-//! This module contains the core [`Tokens`] trait, which adds various convenience methods
-//! to the standard [`Iterator`] interface aimed at making it easy to parse the input.
+//! The point of this library. This module contains the core [`Tokens`] trait, which adds
+//! various convenience methods on top of an [`Iterator`] based interface aimed at making
+//! it easy to parse things.
 //!
-//! The [`IntoTokens`] trait is implemented for types that can be converted into something
-//! implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
+//! The [`IntoTokens`] trait is also provided, and can be implemented for types that can be
+//! converted into something implementing the [`Tokens`] trait (for example `&str` and `&[T]`).
 mod many;
 mod many_err;
 mod sep_by;
@@ -913,8 +914,9 @@ pub trait Tokens: Sized {
         res
     }
 
-    /// Attempt to parse some output from the tokens, returning an `Option`.
-    /// If the `Option` returned is `None`, no tokens will be consumed.
+    /// Attempt to parse some output from the tokens. Returning `None`
+    /// or `false` signifies that no match was found, and no tokens will
+    /// be consumed. Otherwise, we'll return the match and consume the tokens.
     ///
     /// # Example
     ///
@@ -947,17 +949,17 @@ pub trait Tokens: Sized {
     /// assert_eq!(s.remaining(), "obar");
     /// assert_eq!(res, Some(('f', 'o')));
     /// ```
-    fn optional<F, Output>(&mut self, f: F) -> Option<Output>
+    fn optional<F, Output>(&mut self, f: F) -> Output
     where
-        F: FnOnce(&mut Self) -> Option<Output>,
+        F: FnOnce(&mut Self) -> Output,
+        Output: crate::one_of::IsMatch,
     {
         let location = self.location();
-        match f(self) {
-            Some(output) => Some(output),
-            None => {
-                self.set_location(location);
-                None
-            }
+        if let Some(output) = f(self).into_match() {
+            output
+        } else {
+            self.set_location(location);
+            crate::one_of::IsMatch::match_failure()
         }
     }
 
