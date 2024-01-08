@@ -10,7 +10,7 @@ use crate::Tokens;
 /// # Example
 ///
 /// ```
-/// use yap::{Tokens, IntoTokens, chars};
+/// use yap::{IntoTokens, chars};
 ///
 /// let mut toks = "\r\n abc".into_tokens();
 ///
