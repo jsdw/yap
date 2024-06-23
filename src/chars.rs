@@ -88,7 +88,7 @@ where
 // did not contain a valid rust style float. This is expected to be
 // used only to parse f32s or f64s and may panic otherwise.
 #[inline(always)]
-fn parse_f<T: Tokens<Item = char>, F, B, E>(t: &mut T) -> Option<F>
+fn parse_f<T, F, B, E>(t: &mut T) -> Option<F>
 where
     T: Tokens<Item = char>,
     F: core::str::FromStr<Err = E>,

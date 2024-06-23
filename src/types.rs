@@ -122,28 +122,11 @@ impl<'a> Tokens for StrTokens<'a> {
     type Location = StrTokensLocation;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cursor == self.str.len() {
-            return None;
-        }
-
-        // Cursor should always start at a valid char boundary.
-        // So, we just find the next char boundary and return the
-        // char between those two.
-        let mut next_char_boundary = self.cursor + 1;
-        while !self.str.is_char_boundary(next_char_boundary) {
-            next_char_boundary += 1;
-        }
-
-        // We have to go to &str and then char. Unchecked because we know
-        // that we are on a valid boundary. There's probably a quicker way..
-        // To check that bounds detection works even on exotic characters, there's a test included
-        // at the end of the file.
-        let next_char = unsafe { self.str.get_unchecked(self.cursor..next_char_boundary) }
-            .chars()
-            .next()
-            .unwrap();
-
-        self.cursor = next_char_boundary;
+        // Cursor should always start at a valid char boundary so this will never panic.
+        let str = &self.str[self.cursor..];
+        let mut chars = str.chars();
+        let next_char = chars.next()?;
+        self.cursor += str.len() - chars.as_str().len();
         Some(next_char)
     }
 
