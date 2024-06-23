@@ -123,8 +123,10 @@ impl<'a> Tokens for StrTokens<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // Cursor should always start at a valid char boundary so this will never panic.
-        let next_char = self.str[self.cursor..].chars().next()?;
-        self.cursor += next_char.len_utf8();
+        let str = &self.str[self.cursor..];
+        let mut chars = str.chars();
+        let next_char = chars.next()?;
+        self.cursor += str.len() - chars.as_str().len();
         Some(next_char)
     }
 
