@@ -23,7 +23,7 @@ sacrifice some conciseness in exchange for simplicity.
 - Expose all of the "low level" functions. You can save and rewind to locations as needed (see `Tokens::location`),
   and implement any of the provided functions using these primitives.
 - Aims to be "fairly quick". Avoids allocations (and allows you to do the same via the iterator-centric interface)
-  almost everywhere. If you need "as fast as you can get", there amay be quicker alternatives.
+  almost everywhere. If you need "as fast as you can get", there may be quicker alternatives.
 
 Have a look at the `Tokens` trait for all of the parsing methods made available, and examples for each.
 
